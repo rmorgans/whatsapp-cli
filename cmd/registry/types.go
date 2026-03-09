@@ -34,14 +34,20 @@ func MustNewPath(segments ...string) CommandPath {
 			panic("registry.MustNewPath: segment at index " + strconv.Itoa(i) + " is empty")
 		}
 	}
+	parents := make([]string, len(segments)-1)
+	copy(parents, segments[:len(segments)-1])
 	return CommandPath{
-		parents: segments[:len(segments)-1],
+		parents: parents,
 		name:    segments[len(segments)-1],
 	}
 }
 
 // Parents returns the parent segments (everything except the leaf name).
-func (p CommandPath) Parents() []string { return p.parents }
+func (p CommandPath) Parents() []string {
+	out := make([]string, len(p.parents))
+	copy(out, p.parents)
+	return out
+}
 
 // Name returns the leaf command name.
 func (p CommandPath) Name() string { return p.name }
@@ -76,7 +82,11 @@ type ExecMode struct {
 }
 
 // Bounded returns an ExecMode for commands that complete within a timeout.
+// It panics if timeout is negative.
 func Bounded(timeout time.Duration) ExecMode {
+	if timeout < 0 {
+		panic("registry.Bounded: timeout must not be negative")
+	}
 	return ExecMode{kind: execBounded, timeout: timeout}
 }
 
