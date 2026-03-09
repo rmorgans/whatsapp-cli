@@ -235,7 +235,7 @@ func registerAll(reg *r.Registry) {
 	// -----------------------------------------------------------------
 	reg.RegisterParent(r.ParentSpec{
 		Path:  r.MustNewPath("contacts"),
-		Short: "Search contacts",
+		Short: "Manage contacts (search, block, check)",
 	})
 
 	// contacts search
@@ -250,6 +250,55 @@ func registerAll(reg *r.Registry) {
 		r.StringFlag{Name: "query", Help: "search text", Required: true},
 	}
 	reg.Register(ctSearch)
+
+	// contacts block
+	ctBlock := r.MustNewLeafSpec("contacts.block", r.MustNewPath("contacts", "block"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.BlockContact(ctx, f.String("jid")), nil
+		},
+	)
+	ctBlock.Doc = r.DocSpec{Short: "Block a contact"}
+	ctBlock.Exec = r.Bounded(0)
+	ctBlock.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "JID of the contact to block", Required: true},
+	}
+	reg.Register(ctBlock)
+
+	// contacts unblock
+	ctUnblock := r.MustNewLeafSpec("contacts.unblock", r.MustNewPath("contacts", "unblock"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.UnblockContact(ctx, f.String("jid")), nil
+		},
+	)
+	ctUnblock.Doc = r.DocSpec{Short: "Unblock a contact"}
+	ctUnblock.Exec = r.Bounded(0)
+	ctUnblock.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "JID of the contact to unblock", Required: true},
+	}
+	reg.Register(ctUnblock)
+
+	// contacts list-blocked
+	ctListBlocked := r.MustNewLeafSpec("contacts.list-blocked", r.MustNewPath("contacts", "list-blocked"),
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
+			return app.ListBlocked(ctx), nil
+		},
+	)
+	ctListBlocked.Doc = r.DocSpec{Short: "List blocked contacts"}
+	ctListBlocked.Exec = r.Bounded(0)
+	reg.Register(ctListBlocked)
+
+	// contacts check
+	ctCheck := r.MustNewLeafSpec("contacts.check", r.MustNewPath("contacts", "check"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.CheckOnWhatsApp(ctx, f.StringSlice("phone")), nil
+		},
+	)
+	ctCheck.Doc = r.DocSpec{Short: "Check if phone numbers are on WhatsApp"}
+	ctCheck.Exec = r.Bounded(0)
+	ctCheck.Flags = []r.Flag{
+		r.StringSliceFlag{Name: "phone", Help: "phone numbers to check (international format with +)", Required: true},
+	}
+	reg.Register(ctCheck)
 
 	// -----------------------------------------------------------------
 	// chats (parent)
@@ -296,4 +345,159 @@ func registerAll(reg *r.Registry) {
 		r.StringFlag{Name: "output", Help: "output file or directory"},
 	}
 	reg.Register(mediaDl)
+
+	// -----------------------------------------------------------------
+	// groups (parent)
+	// -----------------------------------------------------------------
+	reg.RegisterParent(r.ParentSpec{
+		Path:  r.MustNewPath("groups"),
+		Short: "Manage WhatsApp groups",
+	})
+
+	// groups list
+	grpList := r.MustNewLeafSpec("groups.list", r.MustNewPath("groups", "list"),
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
+			return app.GroupsList(ctx), nil
+		},
+	)
+	grpList.Doc = r.DocSpec{Short: "List joined groups"}
+	grpList.Exec = r.Bounded(0)
+	reg.Register(grpList)
+
+	// groups info
+	grpInfo := r.MustNewLeafSpec("groups.info", r.MustNewPath("groups", "info"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsInfo(ctx, f.String("jid")), nil
+		},
+	)
+	grpInfo.Doc = r.DocSpec{Short: "Get group info"}
+	grpInfo.Exec = r.Bounded(0)
+	grpInfo.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+	}
+	reg.Register(grpInfo)
+
+	// groups create
+	grpCreate := r.MustNewLeafSpec("groups.create", r.MustNewPath("groups", "create"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsCreate(ctx, f.String("name"), f.StringSlice("members")), nil
+		},
+	)
+	grpCreate.Doc = r.DocSpec{Short: "Create a new group"}
+	grpCreate.Exec = r.Bounded(0)
+	grpCreate.Flags = []r.Flag{
+		r.StringFlag{Name: "name", Help: "group name (max 25 characters)", Required: true},
+		r.StringSliceFlag{Name: "members", Help: "member JIDs or phone numbers"},
+	}
+	reg.Register(grpCreate)
+
+	// groups invite-link
+	grpInviteLink := r.MustNewLeafSpec("groups.invite-link", r.MustNewPath("groups", "invite-link"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsInviteLink(ctx, f.String("jid"), f.Bool("reset")), nil
+		},
+	)
+	grpInviteLink.Doc = r.DocSpec{Short: "Get or reset group invite link"}
+	grpInviteLink.Exec = r.Bounded(0)
+	grpInviteLink.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.BoolFlag{Name: "reset", Help: "revoke old link and generate new one"},
+	}
+	reg.Register(grpInviteLink)
+
+	// groups join
+	grpJoin := r.MustNewLeafSpec("groups.join", r.MustNewPath("groups", "join"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsJoin(ctx, f.String("link")), nil
+		},
+	)
+	grpJoin.Doc = r.DocSpec{Short: "Join a group via invite link"}
+	grpJoin.Exec = r.Bounded(0)
+	grpJoin.Flags = []r.Flag{
+		r.StringFlag{Name: "link", Help: "group invite link", Required: true},
+	}
+	reg.Register(grpJoin)
+
+	// groups leave
+	grpLeave := r.MustNewLeafSpec("groups.leave", r.MustNewPath("groups", "leave"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsLeave(ctx, f.String("jid")), nil
+		},
+	)
+	grpLeave.Doc = r.DocSpec{Short: "Leave a group"}
+	grpLeave.Exec = r.Bounded(0)
+	grpLeave.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+	}
+	reg.Register(grpLeave)
+
+	// groups add-members
+	grpAddMembers := r.MustNewLeafSpec("groups.add-members", r.MustNewPath("groups", "add-members"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsAddMembers(ctx, f.String("jid"), f.StringSlice("members")), nil
+		},
+	)
+	grpAddMembers.Doc = r.DocSpec{Short: "Add members to a group"}
+	grpAddMembers.Exec = r.Bounded(0)
+	grpAddMembers.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.StringSliceFlag{Name: "members", Help: "member JIDs or phone numbers to add", Required: true},
+	}
+	reg.Register(grpAddMembers)
+
+	// groups remove-members
+	grpRemoveMembers := r.MustNewLeafSpec("groups.remove-members", r.MustNewPath("groups", "remove-members"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsRemoveMembers(ctx, f.String("jid"), f.StringSlice("members")), nil
+		},
+	)
+	grpRemoveMembers.Doc = r.DocSpec{Short: "Remove members from a group"}
+	grpRemoveMembers.Exec = r.Bounded(0)
+	grpRemoveMembers.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.StringSliceFlag{Name: "members", Help: "member JIDs or phone numbers to remove", Required: true},
+	}
+	reg.Register(grpRemoveMembers)
+
+	// groups set-name
+	grpSetName := r.MustNewLeafSpec("groups.set-name", r.MustNewPath("groups", "set-name"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsSetName(ctx, f.String("jid"), f.String("name")), nil
+		},
+	)
+	grpSetName.Doc = r.DocSpec{Short: "Set group name"}
+	grpSetName.Exec = r.Bounded(0)
+	grpSetName.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.StringFlag{Name: "name", Help: "new group name (max 25 characters)", Required: true},
+	}
+	reg.Register(grpSetName)
+
+	// groups set-description
+	grpSetDesc := r.MustNewLeafSpec("groups.set-description", r.MustNewPath("groups", "set-description"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsSetDescription(ctx, f.String("jid"), f.String("description")), nil
+		},
+	)
+	grpSetDesc.Doc = r.DocSpec{Short: "Set group description"}
+	grpSetDesc.Exec = r.Bounded(0)
+	grpSetDesc.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.StringFlag{Name: "description", Help: "new group description", Required: true},
+	}
+	reg.Register(grpSetDesc)
+
+	// groups set-photo
+	grpSetPhoto := r.MustNewLeafSpec("groups.set-photo", r.MustNewPath("groups", "set-photo"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.GroupsSetPhoto(ctx, f.String("jid"), f.String("image")), nil
+		},
+	)
+	grpSetPhoto.Doc = r.DocSpec{Short: "Set group photo (JPEG)"}
+	grpSetPhoto.Exec = r.Bounded(0)
+	grpSetPhoto.Flags = []r.Flag{
+		r.StringFlag{Name: "jid", Help: "group JID", Required: true},
+		r.StringFlag{Name: "image", Help: "path to JPEG image file", Required: true},
+	}
+	reg.Register(grpSetPhoto)
 }

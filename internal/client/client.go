@@ -709,6 +709,300 @@ func HandleMessage(msg *events.Message) MessageDetails {
 	return details
 }
 
+// ---------------------------------------------------------------------------
+// Contact operations
+// ---------------------------------------------------------------------------
+
+func (w *WAClient) UpdateBlocklist(ctx context.Context, jid string, action string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing JID: %w", err)
+	}
+
+	var changeAction events.BlocklistChangeAction
+	switch action {
+	case "block":
+		changeAction = events.BlocklistChangeActionBlock
+	case "unblock":
+		changeAction = events.BlocklistChangeActionUnblock
+	default:
+		return fmt.Errorf("unsupported blocklist action: %s", action)
+	}
+
+	_, err = w.client.UpdateBlocklist(ctx, parsed, changeAction)
+	if err != nil {
+		return fmt.Errorf("updating blocklist: %w", err)
+	}
+	return nil
+}
+
+func (w *WAClient) GetBlocklist(ctx context.Context) ([]string, error) {
+	if !w.client.IsConnected() {
+		return nil, fmt.Errorf("not connected to WhatsApp")
+	}
+
+	blocklist, err := w.client.GetBlocklist(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting blocklist: %w", err)
+	}
+
+	jids := make([]string, 0, len(blocklist.JIDs))
+	for _, jid := range blocklist.JIDs {
+		jids = append(jids, jid.String())
+	}
+	return jids, nil
+}
+
+func (w *WAClient) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
+	if !w.client.IsConnected() {
+		return nil, fmt.Errorf("not connected to WhatsApp")
+	}
+
+	results, err := w.client.IsOnWhatsApp(ctx, phones)
+	if err != nil {
+		return nil, fmt.Errorf("checking WhatsApp registration: %w", err)
+	}
+
+	responses := make([]types.IsOnWhatsAppResponse, 0, len(results))
+	for _, r := range results {
+		responses = append(responses, types.IsOnWhatsAppResponse{
+			Query:        r.Query,
+			JID:          r.JID.String(),
+			IsOnWhatsApp: r.IsIn,
+		})
+	}
+	return responses, nil
+}
+
+// ---------------------------------------------------------------------------
+// Group operations
+// ---------------------------------------------------------------------------
+
+func (w *WAClient) GetJoinedGroups(ctx context.Context) ([]types.GroupInfo, error) {
+	if !w.client.IsConnected() {
+		return nil, fmt.Errorf("not connected to WhatsApp")
+	}
+
+	groups, err := w.client.GetJoinedGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting joined groups: %w", err)
+	}
+
+	result := make([]types.GroupInfo, 0, len(groups))
+	for _, g := range groups {
+		result = append(result, mapGroupInfo(g))
+	}
+	return result, nil
+}
+
+func (w *WAClient) GetGroupInfo(ctx context.Context, jid string) (*types.GroupInfo, error) {
+	if !w.client.IsConnected() {
+		return nil, fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return nil, fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	info, err := w.client.GetGroupInfo(ctx, parsed)
+	if err != nil {
+		return nil, fmt.Errorf("getting group info: %w", err)
+	}
+
+	gi := mapGroupInfo(info)
+	return &gi, nil
+}
+
+func (w *WAClient) CreateGroup(ctx context.Context, name string, members []string) (*types.GroupInfo, error) {
+	if !w.client.IsConnected() {
+		return nil, fmt.Errorf("not connected to WhatsApp")
+	}
+
+	participants, err := parseJIDs(members)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := w.client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
+		Name:         name,
+		Participants: participants,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating group: %w", err)
+	}
+
+	gi := mapGroupInfo(info)
+	return &gi, nil
+}
+
+func (w *WAClient) GetGroupInviteLink(ctx context.Context, jid string, reset bool) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	link, err := w.client.GetGroupInviteLink(ctx, parsed, reset)
+	if err != nil {
+		return "", fmt.Errorf("getting group invite link: %w", err)
+	}
+	return link, nil
+}
+
+func (w *WAClient) JoinGroupWithLink(ctx context.Context, link string) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	jid, err := w.client.JoinGroupWithLink(ctx, link)
+	if err != nil {
+		return "", fmt.Errorf("joining group: %w", err)
+	}
+	return jid.String(), nil
+}
+
+func (w *WAClient) LeaveGroup(ctx context.Context, jid string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	if err := w.client.LeaveGroup(ctx, parsed); err != nil {
+		return fmt.Errorf("leaving group: %w", err)
+	}
+	return nil
+}
+
+func (w *WAClient) UpdateGroupParticipants(ctx context.Context, jid string, members []string, action string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	participants, err := parseJIDs(members)
+	if err != nil {
+		return err
+	}
+
+	var change whatsmeow.ParticipantChange
+	switch action {
+	case "add":
+		change = whatsmeow.ParticipantChangeAdd
+	case "remove":
+		change = whatsmeow.ParticipantChangeRemove
+	default:
+		return fmt.Errorf("unsupported participant action: %s", action)
+	}
+
+	if _, err := w.client.UpdateGroupParticipants(ctx, parsed, participants, change); err != nil {
+		return fmt.Errorf("updating group participants: %w", err)
+	}
+	return nil
+}
+
+func (w *WAClient) SetGroupName(ctx context.Context, jid, name string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	if err := w.client.SetGroupName(ctx, parsed, name); err != nil {
+		return fmt.Errorf("setting group name: %w", err)
+	}
+	return nil
+}
+
+func (w *WAClient) SetGroupDescription(ctx context.Context, jid, description string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	// SetGroupTopic with empty previousID and newID lets whatsmeow handle them automatically.
+	if err := w.client.SetGroupTopic(ctx, parsed, "", "", description); err != nil {
+		return fmt.Errorf("setting group description: %w", err)
+	}
+	return nil
+}
+
+func (w *WAClient) SetGroupPhoto(ctx context.Context, jid, imagePath string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("parsing group JID: %w", err)
+	}
+
+	data, err := os.ReadFile(imagePath)
+	if err != nil {
+		return fmt.Errorf("reading image file: %w", err)
+	}
+
+	if _, err := w.client.SetGroupPhoto(ctx, parsed, data); err != nil {
+		return fmt.Errorf("setting group photo: %w", err)
+	}
+	return nil
+}
+
+// mapGroupInfo converts a whatsmeow GroupInfo to our internal type.
+func mapGroupInfo(g *waTypes.GroupInfo) types.GroupInfo {
+	members := make([]types.GroupParticipant, 0, len(g.Participants))
+	for _, p := range g.Participants {
+		members = append(members, types.GroupParticipant{
+			JID:          p.JID.String(),
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
+	}
+	return types.GroupInfo{
+		JID:         g.JID.String(),
+		Name:        g.GroupName.Name,
+		Description: g.GroupTopic.Topic,
+		MemberCount: len(g.Participants),
+		Members:     members,
+		CreatedAt:   g.GroupCreated.Unix(),
+	}
+}
+
+// parseJIDs converts a slice of phone numbers / JID strings to whatsmeow JIDs.
+func parseJIDs(members []string) ([]waTypes.JID, error) {
+	jids := make([]waTypes.JID, 0, len(members))
+	for _, m := range members {
+		j, err := parseJID(m)
+		if err != nil {
+			return nil, fmt.Errorf("parsing member JID %q: %w", m, err)
+		}
+		jids = append(jids, j)
+	}
+	return jids, nil
+}
+
 func cloneBytes(b []byte) []byte {
 	if len(b) == 0 {
 		return nil

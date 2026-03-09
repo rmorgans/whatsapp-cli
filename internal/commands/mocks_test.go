@@ -103,6 +103,23 @@ type MockWAClient struct {
 	ResolveChatNameFunc        func(ctx context.Context, jid string, evt interface{}) string
 	DownloadMediaToFileFunc    func(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
 	StartSyncFunc              func(ctx context.Context, eventHandler func(interface{})) error
+
+	// Contact operations
+	UpdateBlocklistFunc        func(ctx context.Context, jid string, action string) error
+	GetBlocklistFunc           func(ctx context.Context) ([]string, error)
+	IsOnWhatsAppFunc           func(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error)
+
+	// Group operations
+	GetJoinedGroupsFunc        func(ctx context.Context) ([]types.GroupInfo, error)
+	GetGroupInfoFunc           func(ctx context.Context, jid string) (*types.GroupInfo, error)
+	CreateGroupFunc            func(ctx context.Context, name string, members []string) (*types.GroupInfo, error)
+	GetGroupInviteLinkFunc     func(ctx context.Context, jid string, reset bool) (string, error)
+	JoinGroupWithLinkFunc      func(ctx context.Context, link string) (string, error)
+	LeaveGroupFunc             func(ctx context.Context, jid string) error
+	UpdateGroupParticipantsFunc func(ctx context.Context, jid string, members []string, action string) error
+	SetGroupNameFunc           func(ctx context.Context, jid, name string) error
+	SetGroupDescriptionFunc    func(ctx context.Context, jid, description string) error
+	SetGroupPhotoFunc          func(ctx context.Context, jid, imagePath string) error
 }
 
 func (m *MockWAClient) IsAuthenticated() bool {
@@ -219,6 +236,97 @@ func (m *MockWAClient) DownloadMediaToFile(ctx context.Context, req types.MediaD
 func (m *MockWAClient) StartSync(ctx context.Context, eventHandler func(interface{})) error {
 	if m.StartSyncFunc != nil {
 		return m.StartSyncFunc(ctx, eventHandler)
+	}
+	return nil
+}
+
+func (m *MockWAClient) UpdateBlocklist(ctx context.Context, jid string, action string) error {
+	if m.UpdateBlocklistFunc != nil {
+		return m.UpdateBlocklistFunc(ctx, jid, action)
+	}
+	return nil
+}
+
+func (m *MockWAClient) GetBlocklist(ctx context.Context) ([]string, error) {
+	if m.GetBlocklistFunc != nil {
+		return m.GetBlocklistFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockWAClient) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
+	if m.IsOnWhatsAppFunc != nil {
+		return m.IsOnWhatsAppFunc(ctx, phones)
+	}
+	return nil, nil
+}
+
+func (m *MockWAClient) GetJoinedGroups(ctx context.Context) ([]types.GroupInfo, error) {
+	if m.GetJoinedGroupsFunc != nil {
+		return m.GetJoinedGroupsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockWAClient) GetGroupInfo(ctx context.Context, jid string) (*types.GroupInfo, error) {
+	if m.GetGroupInfoFunc != nil {
+		return m.GetGroupInfoFunc(ctx, jid)
+	}
+	return nil, nil
+}
+
+func (m *MockWAClient) CreateGroup(ctx context.Context, name string, members []string) (*types.GroupInfo, error) {
+	if m.CreateGroupFunc != nil {
+		return m.CreateGroupFunc(ctx, name, members)
+	}
+	return nil, nil
+}
+
+func (m *MockWAClient) GetGroupInviteLink(ctx context.Context, jid string, reset bool) (string, error) {
+	if m.GetGroupInviteLinkFunc != nil {
+		return m.GetGroupInviteLinkFunc(ctx, jid, reset)
+	}
+	return "", nil
+}
+
+func (m *MockWAClient) JoinGroupWithLink(ctx context.Context, link string) (string, error) {
+	if m.JoinGroupWithLinkFunc != nil {
+		return m.JoinGroupWithLinkFunc(ctx, link)
+	}
+	return "", nil
+}
+
+func (m *MockWAClient) LeaveGroup(ctx context.Context, jid string) error {
+	if m.LeaveGroupFunc != nil {
+		return m.LeaveGroupFunc(ctx, jid)
+	}
+	return nil
+}
+
+func (m *MockWAClient) UpdateGroupParticipants(ctx context.Context, jid string, members []string, action string) error {
+	if m.UpdateGroupParticipantsFunc != nil {
+		return m.UpdateGroupParticipantsFunc(ctx, jid, members, action)
+	}
+	return nil
+}
+
+func (m *MockWAClient) SetGroupName(ctx context.Context, jid, name string) error {
+	if m.SetGroupNameFunc != nil {
+		return m.SetGroupNameFunc(ctx, jid, name)
+	}
+	return nil
+}
+
+func (m *MockWAClient) SetGroupDescription(ctx context.Context, jid, description string) error {
+	if m.SetGroupDescriptionFunc != nil {
+		return m.SetGroupDescriptionFunc(ctx, jid, description)
+	}
+	return nil
+}
+
+func (m *MockWAClient) SetGroupPhoto(ctx context.Context, jid, imagePath string) error {
+	if m.SetGroupPhotoFunc != nil {
+		return m.SetGroupPhotoFunc(ctx, jid, imagePath)
 	}
 	return nil
 }

@@ -56,4 +56,21 @@ type WAClient interface {
 	EditMessage(ctx context.Context, chatJID, messageID, newText string) error
 	MarkRead(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error
 	StartSync(ctx context.Context, eventHandler func(interface{})) error
+
+	// Contact operations
+	UpdateBlocklist(ctx context.Context, jid string, action string) error
+	GetBlocklist(ctx context.Context) ([]string, error)
+	IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error)
+
+	// Group operations
+	GetJoinedGroups(ctx context.Context) ([]types.GroupInfo, error)
+	GetGroupInfo(ctx context.Context, jid string) (*types.GroupInfo, error)
+	CreateGroup(ctx context.Context, name string, members []string) (*types.GroupInfo, error)
+	GetGroupInviteLink(ctx context.Context, jid string, reset bool) (string, error)
+	JoinGroupWithLink(ctx context.Context, link string) (string, error)
+	LeaveGroup(ctx context.Context, jid string) error
+	UpdateGroupParticipants(ctx context.Context, jid string, members []string, action string) error
+	SetGroupName(ctx context.Context, jid, name string) error
+	SetGroupDescription(ctx context.Context, jid, description string) error
+	SetGroupPhoto(ctx context.Context, jid, imagePath string) error
 }
