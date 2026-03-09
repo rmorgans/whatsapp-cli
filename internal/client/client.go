@@ -156,6 +156,31 @@ func (w *WAClient) SendMessage(ctx context.Context, recipient, message string) (
 	return resp.ID, nil
 }
 
+func (w *WAClient) SendTextReply(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	recipientJID, err := parseJID(recipient)
+	if err != nil {
+		return "", fmt.Errorf("parsing recipient: %w", err)
+	}
+
+	resp, err := w.client.SendMessage(ctx, recipientJID, &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text: proto.String(message),
+			ContextInfo: &waProto.ContextInfo{
+				StanzaID:    proto.String(replyToID),
+				Participant: proto.String(replyToSender),
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.ID, nil
+}
+
 func (w *WAClient) SendImageMessage(ctx context.Context, recipient, imagePath, caption string) (string, error) {
 	if !w.client.IsConnected() {
 		return "", fmt.Errorf("not connected to WhatsApp")
@@ -171,7 +196,7 @@ func (w *WAClient) SendImageMessage(ctx context.Context, recipient, imagePath, c
 		return "", fmt.Errorf("reading image file: %w", err)
 	}
 
-	mimeType := mimeTypeFromExtension(imagePath)
+	mimeType := mimeTypeFromExtension(imagePath, "image/jpeg")
 
 	uploadResp, err := w.client.Upload(ctx, data, whatsmeow.MediaImage)
 	if err != nil {
@@ -196,12 +221,137 @@ func (w *WAClient) SendImageMessage(ctx context.Context, recipient, imagePath, c
 	return sendResp.ID, nil
 }
 
-func mimeTypeFromExtension(path string) string {
+func (w *WAClient) SendVideoMessage(ctx context.Context, recipient, videoPath, caption string) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	recipientJID, err := parseJID(recipient)
+	if err != nil {
+		return "", fmt.Errorf("parsing recipient: %w", err)
+	}
+
+	data, err := os.ReadFile(videoPath)
+	if err != nil {
+		return "", fmt.Errorf("reading video file: %w", err)
+	}
+
+	mimeType := mimeTypeFromExtension(videoPath, "video/mp4")
+
+	uploadResp, err := w.client.Upload(ctx, data, whatsmeow.MediaVideo)
+	if err != nil {
+		return "", fmt.Errorf("uploading video: %w", err)
+	}
+
+	sendResp, err := w.client.SendMessage(ctx, recipientJID, &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			Caption:       proto.String(caption),
+			Mimetype:      proto.String(mimeType),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    &uploadResp.FileLength,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("sending video message: %w", err)
+	}
+	return sendResp.ID, nil
+}
+
+func (w *WAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	recipientJID, err := parseJID(recipient)
+	if err != nil {
+		return "", fmt.Errorf("parsing recipient: %w", err)
+	}
+
+	data, err := os.ReadFile(audioPath)
+	if err != nil {
+		return "", fmt.Errorf("reading audio file: %w", err)
+	}
+
+	mimeType := mimeTypeFromExtension(audioPath, "audio/ogg; codecs=opus")
+
+	uploadResp, err := w.client.Upload(ctx, data, whatsmeow.MediaAudio)
+	if err != nil {
+		return "", fmt.Errorf("uploading audio: %w", err)
+	}
+
+	ptt := true
+	sendResp, err := w.client.SendMessage(ctx, recipientJID, &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			Mimetype:      proto.String(mimeType),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    &uploadResp.FileLength,
+			PTT:           &ptt,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("sending audio message: %w", err)
+	}
+	return sendResp.ID, nil
+}
+
+func (w *WAClient) SendDocumentMessage(ctx context.Context, recipient, docPath, filename string) (string, error) {
+	if !w.client.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+
+	recipientJID, err := parseJID(recipient)
+	if err != nil {
+		return "", fmt.Errorf("parsing recipient: %w", err)
+	}
+
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		return "", fmt.Errorf("reading document file: %w", err)
+	}
+
+	if filename == "" {
+		filename = filepath.Base(docPath)
+	}
+
+	mimeType := mimeTypeFromExtension(docPath, "application/octet-stream")
+
+	uploadResp, err := w.client.Upload(ctx, data, whatsmeow.MediaDocument)
+	if err != nil {
+		return "", fmt.Errorf("uploading document: %w", err)
+	}
+
+	sendResp, err := w.client.SendMessage(ctx, recipientJID, &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			FileName:      proto.String(filename),
+			Mimetype:      proto.String(mimeType),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    &uploadResp.FileLength,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("sending document message: %w", err)
+	}
+	return sendResp.ID, nil
+}
+
+func mimeTypeFromExtension(path, fallback string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	if mtype := mime.TypeByExtension(ext); mtype != "" {
 		return mtype
 	}
-	return "image/jpeg"
+	return fallback
 }
 
 func (w *WAClient) AddEventHandler(handler func(interface{})) {
@@ -303,6 +453,26 @@ func (w *WAClient) StartSync(ctx context.Context, eventHandler func(interface{})
 	}
 
 	return nil
+}
+
+func (w *WAClient) ReactToMessage(ctx context.Context, chatJID, senderJID, messageID, emoji string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	chat, err := waTypes.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("parsing chat JID: %w", err)
+	}
+
+	sender, err := waTypes.ParseJID(senderJID)
+	if err != nil {
+		return fmt.Errorf("parsing sender JID: %w", err)
+	}
+
+	msg := w.client.BuildReaction(chat, sender, messageID, emoji)
+	_, err = w.client.SendMessage(ctx, chat, msg)
+	return err
 }
 
 func parseJID(recipient string) (waTypes.JID, error) {

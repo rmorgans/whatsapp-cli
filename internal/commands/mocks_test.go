@@ -86,15 +86,20 @@ func (m *MockMessageStore) Close() error {
 
 // MockWAClient implements WAClient for testing.
 type MockWAClient struct {
-	IsAuthenticatedFunc     func() bool
-	AuthenticateFunc        func(ctx context.Context) error
-	ConnectFunc             func(ctx context.Context) error
-	DisconnectFunc          func()
-	SendMessageFunc         func(ctx context.Context, recipient, message string) (string, error)
-	SendImageMessageFunc    func(ctx context.Context, recipient, imagePath, caption string) (string, error)
-	ResolveChatNameFunc     func(ctx context.Context, jid string, evt interface{}) string
-	DownloadMediaToFileFunc func(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
-	StartSyncFunc           func(ctx context.Context, eventHandler func(interface{})) error
+	IsAuthenticatedFunc        func() bool
+	AuthenticateFunc           func(ctx context.Context) error
+	ConnectFunc                func(ctx context.Context) error
+	DisconnectFunc             func()
+	SendMessageFunc            func(ctx context.Context, recipient, message string) (string, error)
+	SendImageMessageFunc       func(ctx context.Context, recipient, imagePath, caption string) (string, error)
+	SendVideoMessageFunc       func(ctx context.Context, recipient, videoPath, caption string) (string, error)
+	SendAudioMessageFunc       func(ctx context.Context, recipient, audioPath string) (string, error)
+	SendDocumentMessageFunc    func(ctx context.Context, recipient, docPath, filename string) (string, error)
+	SendTextReplyFunc          func(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error)
+	ReactToMessageFunc         func(ctx context.Context, chatJID, senderJID, messageID, emoji string) error
+	ResolveChatNameFunc        func(ctx context.Context, jid string, evt interface{}) string
+	DownloadMediaToFileFunc    func(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
+	StartSyncFunc              func(ctx context.Context, eventHandler func(interface{})) error
 }
 
 func (m *MockWAClient) IsAuthenticated() bool {
@@ -136,6 +141,41 @@ func (m *MockWAClient) SendImageMessage(ctx context.Context, recipient, imagePat
 		return m.SendImageMessageFunc(ctx, recipient, imagePath, caption)
 	}
 	return "mock-id", nil
+}
+
+func (m *MockWAClient) SendVideoMessage(ctx context.Context, recipient, videoPath, caption string) (string, error) {
+	if m.SendVideoMessageFunc != nil {
+		return m.SendVideoMessageFunc(ctx, recipient, videoPath, caption)
+	}
+	return "mock-id", nil
+}
+
+func (m *MockWAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error) {
+	if m.SendAudioMessageFunc != nil {
+		return m.SendAudioMessageFunc(ctx, recipient, audioPath)
+	}
+	return "mock-id", nil
+}
+
+func (m *MockWAClient) SendDocumentMessage(ctx context.Context, recipient, docPath, filename string) (string, error) {
+	if m.SendDocumentMessageFunc != nil {
+		return m.SendDocumentMessageFunc(ctx, recipient, docPath, filename)
+	}
+	return "mock-id", nil
+}
+
+func (m *MockWAClient) SendTextReply(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error) {
+	if m.SendTextReplyFunc != nil {
+		return m.SendTextReplyFunc(ctx, recipient, message, replyToID, replyToSender)
+	}
+	return "mock-reply-id", nil
+}
+
+func (m *MockWAClient) ReactToMessage(ctx context.Context, chatJID, senderJID, messageID, emoji string) error {
+	if m.ReactToMessageFunc != nil {
+		return m.ReactToMessageFunc(ctx, chatJID, senderJID, messageID, emoji)
+	}
+	return nil
 }
 
 func (m *MockWAClient) ResolveChatName(ctx context.Context, jid string, evt interface{}) string {

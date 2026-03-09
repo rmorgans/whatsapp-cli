@@ -174,6 +174,88 @@ func (a *App) SendMessage(ctx context.Context, recipient, message string) string
 	})
 }
 
+func (a *App) SendReply(ctx context.Context, recipient, message, replyToID string) string {
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	// Look up the original message to get the sender JID for ContextInfo.
+	meta, err := a.store.GetMessageMetadata(replyToID, nil)
+	if err != nil {
+		return output.Error(fmt.Errorf("looking up reply-to message %s: %w", replyToID, err))
+	}
+
+	// The Participant field in ContextInfo needs a full JID.
+	senderJID := recipientToJID(meta.Sender)
+
+	msgID, err := a.client.SendTextReply(ctx, recipient, message, replyToID, senderJID)
+	if err != nil {
+		return output.Error(err)
+	}
+
+	timestamp := time.Now()
+	chatJID := recipientToJID(recipient)
+
+	chatName := a.client.ResolveChatName(ctx, chatJID, nil)
+	if chatName == "" {
+		chatName = recipient
+	}
+
+	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
+		return output.Error(fmt.Errorf("storing chat: %w", err))
+	}
+	if err := a.store.StoreMessage(
+		msgID, chatJID, "me", message, timestamp, true,
+		"", "", "", "", "",
+		nil, nil, nil, 0,
+	); err != nil {
+		return output.Error(fmt.Errorf("storing message: %w", err))
+	}
+
+	return output.Success(map[string]interface{}{
+		"sent":      true,
+		"id":        msgID,
+		"recipient": recipient,
+		"message":   message,
+		"reply_to":  replyToID,
+	})
+}
+
+func (a *App) ReactToMessage(ctx context.Context, messageID, emoji string, chatJID *string) string {
+	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return output.Error(fmt.Errorf("message %s not found", messageID))
+		}
+		return output.Error(err)
+	}
+
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	senderJID := meta.Sender
+	if !strings.Contains(senderJID, "@") {
+		senderJID = senderJID + "@s.whatsapp.net"
+	}
+
+	if err := a.client.ReactToMessage(ctx, meta.ChatJID, senderJID, messageID, emoji); err != nil {
+		return output.Error(err)
+	}
+
+	result := map[string]interface{}{
+		"reacted":    true,
+		"message_id": messageID,
+		"chat_jid":   meta.ChatJID,
+		"emoji":      emoji,
+	}
+	if emoji == "" {
+		result["reacted"] = false
+		result["action"] = "removed"
+	}
+	return output.Success(result)
+}
+
 func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption string) string {
 	if err := a.client.Connect(ctx); err != nil {
 		return output.Error(err)
@@ -214,6 +296,130 @@ func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption strin
 		"recipient": recipient,
 		"image":     imagePath,
 		"caption":   caption,
+	})
+}
+
+func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption string) string {
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	msgID, err := a.client.SendVideoMessage(ctx, recipient, videoPath, caption)
+	if err != nil {
+		return output.Error(err)
+	}
+
+	timestamp := time.Now()
+	chatJID := recipientToJID(recipient)
+
+	chatName := a.client.ResolveChatName(ctx, chatJID, nil)
+	if chatName == "" {
+		chatName = recipient
+	}
+
+	content := caption
+	if content == "" {
+		content = "[Video]"
+	}
+
+	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
+		return output.Error(fmt.Errorf("storing chat: %w", err))
+	}
+	if err := a.store.StoreMessage(
+		msgID, chatJID, "me", content, timestamp, true,
+		"video", filepath.Base(videoPath), "", "", "",
+		nil, nil, nil, 0,
+	); err != nil {
+		return output.Error(fmt.Errorf("storing message: %w", err))
+	}
+
+	return output.Success(map[string]interface{}{
+		"sent":      true,
+		"id":        msgID,
+		"recipient": recipient,
+		"video":     videoPath,
+		"caption":   caption,
+	})
+}
+
+func (a *App) SendAudio(ctx context.Context, recipient, audioPath string) string {
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	msgID, err := a.client.SendAudioMessage(ctx, recipient, audioPath)
+	if err != nil {
+		return output.Error(err)
+	}
+
+	timestamp := time.Now()
+	chatJID := recipientToJID(recipient)
+
+	chatName := a.client.ResolveChatName(ctx, chatJID, nil)
+	if chatName == "" {
+		chatName = recipient
+	}
+
+	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
+		return output.Error(fmt.Errorf("storing chat: %w", err))
+	}
+	if err := a.store.StoreMessage(
+		msgID, chatJID, "me", "[Audio]", timestamp, true,
+		"audio", filepath.Base(audioPath), "", "", "",
+		nil, nil, nil, 0,
+	); err != nil {
+		return output.Error(fmt.Errorf("storing message: %w", err))
+	}
+
+	return output.Success(map[string]interface{}{
+		"sent":      true,
+		"id":        msgID,
+		"recipient": recipient,
+		"audio":     audioPath,
+	})
+}
+
+func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename string) string {
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	msgID, err := a.client.SendDocumentMessage(ctx, recipient, docPath, filename)
+	if err != nil {
+		return output.Error(err)
+	}
+
+	timestamp := time.Now()
+	chatJID := recipientToJID(recipient)
+
+	chatName := a.client.ResolveChatName(ctx, chatJID, nil)
+	if chatName == "" {
+		chatName = recipient
+	}
+
+	// Use the effective filename (client falls back to filepath.Base if empty)
+	displayName := filename
+	if displayName == "" {
+		displayName = filepath.Base(docPath)
+	}
+
+	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
+		return output.Error(fmt.Errorf("storing chat: %w", err))
+	}
+	if err := a.store.StoreMessage(
+		msgID, chatJID, "me", displayName, timestamp, true,
+		"document", displayName, "", "", "",
+		nil, nil, nil, 0,
+	); err != nil {
+		return output.Error(fmt.Errorf("storing message: %w", err))
+	}
+
+	return output.Success(map[string]interface{}{
+		"sent":      true,
+		"id":        msgID,
+		"recipient": recipient,
+		"document":  docPath,
+		"filename":  displayName,
 	})
 }
 

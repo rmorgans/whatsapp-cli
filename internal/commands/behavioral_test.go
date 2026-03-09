@@ -198,6 +198,69 @@ func TestSearchContacts_ReturnsResults(t *testing.T) {
 	require.Equal(t, "John Doe", contacts[0].Name)
 }
 
+// TestSendReply_Success verifies that SendReply looks up metadata and calls SendTextReply.
+func TestSendReply_Success(t *testing.T) {
+	var capturedReplyToID, capturedReplyToSender, capturedMessage string
+
+	mockClient := &MockWAClient{
+		SendTextReplyFunc: func(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error) {
+			capturedMessage = message
+			capturedReplyToID = replyToID
+			capturedReplyToSender = replyToSender
+			return "reply-msg-id", nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			require.Equal(t, "orig-msg-123", id)
+			return store.Message{
+				ID:      "orig-msg-123",
+				ChatJID: "chat@s.whatsapp.net",
+				Sender:  "5511999999999",
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.SendReply(context.Background(), "5511999999999", "my reply text", "orig-msg-123")
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, true, data["sent"])
+	require.Equal(t, "reply-msg-id", data["id"])
+	require.Equal(t, "orig-msg-123", data["reply_to"])
+	require.Equal(t, "my reply text", data["message"])
+
+	// Verify the client received correct reply context
+	require.Equal(t, "my reply text", capturedMessage)
+	require.Equal(t, "orig-msg-123", capturedReplyToID)
+	require.Equal(t, "5511999999999@s.whatsapp.net", capturedReplyToSender)
+}
+
+// TestSendReply_MetadataLookupFails verifies error when reply-to message is not found.
+func TestSendReply_MetadataLookupFails(t *testing.T) {
+	mockClient := &MockWAClient{}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{}, sql.ErrNoRows
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.SendReply(context.Background(), "5511999999999", "reply text", "nonexistent-id")
+
+	resp := parseResponse(t, result)
+	require.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+	require.Contains(t, *resp.Error, "looking up reply-to message")
+}
+
 // TestListChats_ReturnsChats verifies chat listing works.
 func TestListChats_ReturnsChats(t *testing.T) {
 	mockStore := &MockMessageStore{
@@ -222,4 +285,103 @@ func TestListChats_ReturnsChats(t *testing.T) {
 	err := json.Unmarshal(resp.Data, &chats)
 	require.NoError(t, err)
 	require.Len(t, chats, 2)
+}
+
+// TestReactToMessage_Success verifies that reacting to a message sends the emoji.
+func TestReactToMessage_Success(t *testing.T) {
+	var capturedChatJID, capturedSenderJID, capturedMessageID, capturedEmoji string
+
+	mockClient := &MockWAClient{
+		ReactToMessageFunc: func(ctx context.Context, chatJID, senderJID, messageID, emoji string) error {
+			capturedChatJID = chatJID
+			capturedSenderJID = senderJID
+			capturedMessageID = messageID
+			capturedEmoji = emoji
+			return nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			require.Equal(t, "msg-123", id)
+			return store.Message{
+				ID:      "msg-123",
+				ChatJID: "chat@s.whatsapp.net",
+				Sender:  "5511999999999",
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.ReactToMessage(context.Background(), "msg-123", "\xf0\x9f\x91\x8d", nil)
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, true, data["reacted"])
+	require.Equal(t, "msg-123", data["message_id"])
+	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+
+	// Verify the client received correct parameters
+	require.Equal(t, "chat@s.whatsapp.net", capturedChatJID)
+	require.Equal(t, "5511999999999@s.whatsapp.net", capturedSenderJID)
+	require.Equal(t, "msg-123", capturedMessageID)
+	require.Equal(t, "\xf0\x9f\x91\x8d", capturedEmoji)
+}
+
+// TestReactToMessage_RemoveReaction verifies that empty emoji removes a reaction.
+func TestReactToMessage_RemoveReaction(t *testing.T) {
+	var capturedEmoji string
+
+	mockClient := &MockWAClient{
+		ReactToMessageFunc: func(ctx context.Context, chatJID, senderJID, messageID, emoji string) error {
+			capturedEmoji = emoji
+			return nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{
+				ID:      "msg-123",
+				ChatJID: "chat@s.whatsapp.net",
+				Sender:  "5511999999999@s.whatsapp.net",
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.ReactToMessage(context.Background(), "msg-123", "", nil)
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, false, data["reacted"])
+	require.Equal(t, "removed", data["action"])
+	require.Equal(t, "", capturedEmoji)
+}
+
+// TestReactToMessage_MessageNotFound verifies error when message is not found.
+func TestReactToMessage_MessageNotFound(t *testing.T) {
+	mockClient := &MockWAClient{}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{}, sql.ErrNoRows
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.ReactToMessage(context.Background(), "nonexistent-id", "\xf0\x9f\x91\x8d", nil)
+
+	resp := parseResponse(t, result)
+	require.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+	require.Contains(t, *resp.Error, "not found")
 }

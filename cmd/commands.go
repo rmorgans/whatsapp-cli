@@ -64,33 +64,69 @@ func registerAll(reg *r.Registry) {
 	send := r.MustNewLeafSpec("send", r.MustNewPath("send"),
 		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
 			to := f.String("to")
-			if f.IsSet("image") {
-				return app.SendImage(ctx, to, f.String("image"), f.String("caption")), nil
+			replyTo := ""
+			if f.IsSet("reply-to") {
+				replyTo = f.String("reply-to")
 			}
-			return app.SendMessage(ctx, to, f.String("message")), nil
+			switch {
+			case f.IsSet("image"):
+				if replyTo != "" {
+					return "", fmt.Errorf("--reply-to is only supported with text messages")
+				}
+				return app.SendImage(ctx, to, f.String("image"), f.String("caption")), nil
+			case f.IsSet("video"):
+				if replyTo != "" {
+					return "", fmt.Errorf("--reply-to is only supported with text messages")
+				}
+				return app.SendVideo(ctx, to, f.String("video"), f.String("caption")), nil
+			case f.IsSet("audio"):
+				if replyTo != "" {
+					return "", fmt.Errorf("--reply-to is only supported with text messages")
+				}
+				return app.SendAudio(ctx, to, f.String("audio")), nil
+			case f.IsSet("document"):
+				if replyTo != "" {
+					return "", fmt.Errorf("--reply-to is only supported with text messages")
+				}
+				return app.SendDocument(ctx, to, f.String("document"), f.String("filename")), nil
+			default:
+				if replyTo != "" {
+					return app.SendReply(ctx, to, f.String("message"), replyTo), nil
+				}
+				return app.SendMessage(ctx, to, f.String("message")), nil
+			}
 		},
 	)
-	send.Doc = r.DocSpec{Short: "Send a message or image"}
+	send.Doc = r.DocSpec{Short: "Send a message, image, video, audio, or document"}
 	send.Exec = r.Bounded(0)
 	send.Flags = []r.Flag{
 		r.StringFlag{Name: "to", Help: "recipient JID or phone number", Required: true},
 		r.StringFlag{Name: "message", Help: "message text"},
 		r.StringFlag{Name: "image", Help: "image file path"},
-		r.StringFlag{Name: "caption", Help: "image caption"},
+		r.StringFlag{Name: "video", Help: "video file path"},
+		r.StringFlag{Name: "audio", Help: "audio file path"},
+		r.StringFlag{Name: "document", Help: "document file path"},
+		r.StringFlag{Name: "caption", Help: "media caption (for image/video)"},
+		r.StringFlag{Name: "filename", Help: "document filename override"},
+		r.StringFlag{Name: "reply-to", Help: "message ID to reply to"},
 	}
 	send.Rules = r.RuleSpec{
-		Requires: map[string][]string{"caption": {"image"}},
+		Requires: map[string][]string{"filename": {"document"}},
 	}
-	// Custom validation: --message and --image are mutually exclusive, and
-	// exactly one must be provided. We use Validate instead of ExactlyOneOf
-	// because the existing tests assert the specific error wording.
+	// Custom validation: content flags are mutually exclusive, exactly one required.
+	// Preserves backward-compatible error messages for existing tests.
 	send.Validate = func(f r.FlagValues) error {
-		hasMsg := f.IsSet("message")
-		hasImg := f.IsSet("image")
-		if hasMsg && hasImg {
+		contentFlags := []string{"message", "image", "video", "audio", "document"}
+		var set []string
+		for _, name := range contentFlags {
+			if f.IsSet(name) {
+				set = append(set, name)
+			}
+		}
+		if len(set) > 1 {
 			return fmt.Errorf("--message and --image are mutually exclusive")
 		}
-		if !hasMsg && !hasImg {
+		if len(set) == 0 {
 			return fmt.Errorf("--message or --image required")
 		}
 		return nil
@@ -135,6 +171,21 @@ func registerAll(reg *r.Registry) {
 		r.IntFlag{Name: "page", Help: "page number"},
 	}
 	reg.Register(msgSearch)
+
+	// messages react
+	react := r.MustNewLeafSpec("messages.react", r.MustNewPath("messages", "react"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.ReactToMessage(ctx, f.String("message-id"), f.String("emoji"), optStr(f, "chat")), nil
+		},
+	)
+	react.Doc = r.DocSpec{Short: "React to a message with an emoji"}
+	react.Exec = r.Bounded(0)
+	react.Flags = []r.Flag{
+		r.StringFlag{Name: "message-id", Help: "message to react to", Required: true},
+		r.StringFlag{Name: "emoji", Help: "reaction emoji (empty string to remove reaction)", Required: true},
+		r.StringFlag{Name: "chat", Help: "chat JID (required if message ID is ambiguous)"},
+	}
+	reg.Register(react)
 
 	// -----------------------------------------------------------------
 	// contacts (parent)

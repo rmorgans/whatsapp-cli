@@ -45,7 +45,12 @@ type WAClient interface {
 	Disconnect()
 	SendMessage(ctx context.Context, recipient, message string) (string, error)
 	SendImageMessage(ctx context.Context, recipient, imagePath, caption string) (string, error)
+	SendVideoMessage(ctx context.Context, recipient, videoPath, caption string) (string, error)
+	SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error)
+	SendDocumentMessage(ctx context.Context, recipient, docPath, filename string) (string, error)
+	SendTextReply(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error)
 	ResolveChatName(ctx context.Context, jid string, evt interface{}) string
 	DownloadMediaToFile(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
+	ReactToMessage(ctx context.Context, chatJID, senderJID, messageID, emoji string) error
 	StartSync(ctx context.Context, eventHandler func(interface{})) error
 }
