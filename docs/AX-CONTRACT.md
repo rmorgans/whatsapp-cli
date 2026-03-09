@@ -123,6 +123,18 @@ Stderr carries:
 
 Agents should ignore stderr unless debugging. All actionable data is on stdout.
 
+## Output Format
+
+The `--output` flag controls stdout format. It is a persistent flag on the root command.
+
+| Value | Behavior |
+|-------|----------|
+| `json` (default) | Raw JSON envelope. This is the agent contract — agents should not change this. |
+| `human` | Human-readable formatted text. Tables for lists, key-value for objects, one-liners for mutations. |
+| `auto` | TTY detection: terminal → `human`, pipe → `json`. |
+
+Agents should not pass `--output` (or pass `--output json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
+
 ## Flag Conventions
 
 - `--to` accepts either a bare phone number (`61412345678`) or a full JID (`61412345678@s.whatsapp.net`). No `+` prefix. The CLI normalizes automatically.
