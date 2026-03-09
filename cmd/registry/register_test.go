@@ -65,7 +65,7 @@ func TestSetGetVersion(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
 	r.SetVersion("1.2.3")
-	assert.Equal(t, "1.2.3", r.GetVersion())
+	assert.Equal(t, "1.2.3", r.Version())
 }
 
 // ---------------------------------------------------------------------------
@@ -809,6 +809,31 @@ func TestRegister_ExamplesJoined(t *testing.T) {
 // ---------------------------------------------------------------------------
 // StringSliceFlag default
 // ---------------------------------------------------------------------------
+
+func TestRegister_PanicOnRequiredIntFlagWithDefault(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	spec := dummyLeaf("cmd1", "alpha")
+	spec.Flags = []Flag{
+		IntFlag{Name: "count", Default: 10, Required: true},
+	}
+	mustPanic(t, "must not have a non-zero default", func() {
+		r.Register(spec)
+	})
+}
+
+func TestRegister_PanicOnDuplicateShortFlag(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	spec := dummyLeaf("cmd1", "alpha")
+	spec.Flags = []Flag{
+		StringFlag{Name: "foo", Short: "f", Help: "first"},
+		IntFlag{Name: "bar", Short: "f", Help: "second"},
+	}
+	mustPanic(t, "duplicate short flag -f", func() {
+		r.Register(spec)
+	})
+}
 
 func TestRegister_StringSliceFlagDefault(t *testing.T) {
 	t.Parallel()

@@ -47,8 +47,8 @@ func NewRegistry() *Registry {
 // SetVersion sets the CLI version string.
 func (r *Registry) SetVersion(v string) { r.version = v }
 
-// GetVersion returns the CLI version string.
-func (r *Registry) GetVersion() string { return r.version }
+// Version returns the CLI version string.
+func (r *Registry) Version() string { return r.version }
 
 // Root returns the root cobra command for testing.
 func (r *Registry) Root() *cobra.Command { return r.root }
@@ -155,6 +155,31 @@ func (r *Registry) validateRegistration(spec LeafSpec) {
 	for _, f := range spec.Flags {
 		if sf, ok := f.(StringFlag); ok && sf.Required && sf.Default != "" {
 			panic("registry.Register: required StringFlag " + sf.Name + " must not have a non-zero default")
+		}
+		if sf, ok := f.(IntFlag); ok && sf.Required && sf.Default != 0 {
+			panic("registry.Register: required IntFlag " + sf.Name + " must not have a non-zero default")
+		}
+	}
+
+	// Check for duplicate short flags.
+	shortSet := make(map[string]bool)
+	for _, f := range spec.Flags {
+		var short string
+		switch fl := f.(type) {
+		case StringFlag:
+			short = fl.Short
+		case IntFlag:
+			short = fl.Short
+		case BoolFlag:
+			short = fl.Short
+		case StringSliceFlag:
+			short = fl.Short
+		}
+		if short != "" {
+			if shortSet[short] {
+				panic("registry.Register: duplicate short flag -" + short)
+			}
+			shortSet[short] = true
 		}
 	}
 
@@ -378,8 +403,12 @@ func newContext(mode ExecMode) (context.Context, context.CancelFunc) {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
-			<-sigChan
-			cancel()
+			select {
+			case <-sigChan:
+				cancel()
+			case <-ctx.Done():
+			}
+			signal.Stop(sigChan)
 		}()
 		return ctx, cancel
 	}
@@ -476,13 +505,10 @@ func validateRules(cmd *cobra.Command, rules RuleSpec) error {
 func validateEnums(fv FlagValues, flags []Flag) error {
 	for _, f := range flags {
 		sf, ok := f.(StringFlag)
-		if !ok || len(sf.Enum) == 0 {
+		if !ok || len(sf.Enum) == 0 || !fv.IsSet(sf.Name) {
 			continue
 		}
 		val := fv.String(sf.Name)
-		if val == "" {
-			continue
-		}
 		found := false
 		for _, allowed := range sf.Enum {
 			if val == allowed {
