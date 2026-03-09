@@ -52,5 +52,8 @@ type WAClient interface {
 	ResolveChatName(ctx context.Context, jid string, evt interface{}) string
 	DownloadMediaToFile(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
 	ReactToMessage(ctx context.Context, chatJID, senderJID, messageID, emoji string) error
+	RevokeMessage(ctx context.Context, chatJID, senderJID, messageID string) error
+	EditMessage(ctx context.Context, chatJID, messageID, newText string) error
+	MarkRead(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error
 	StartSync(ctx context.Context, eventHandler func(interface{})) error
 }

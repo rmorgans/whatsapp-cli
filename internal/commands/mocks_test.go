@@ -97,6 +97,9 @@ type MockWAClient struct {
 	SendDocumentMessageFunc    func(ctx context.Context, recipient, docPath, filename string) (string, error)
 	SendTextReplyFunc          func(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error)
 	ReactToMessageFunc         func(ctx context.Context, chatJID, senderJID, messageID, emoji string) error
+	RevokeMessageFunc          func(ctx context.Context, chatJID, senderJID, messageID string) error
+	EditMessageFunc            func(ctx context.Context, chatJID, messageID, newText string) error
+	MarkReadFunc               func(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error
 	ResolveChatNameFunc        func(ctx context.Context, jid string, evt interface{}) string
 	DownloadMediaToFileFunc    func(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
 	StartSyncFunc              func(ctx context.Context, eventHandler func(interface{})) error
@@ -174,6 +177,27 @@ func (m *MockWAClient) SendTextReply(ctx context.Context, recipient, message, re
 func (m *MockWAClient) ReactToMessage(ctx context.Context, chatJID, senderJID, messageID, emoji string) error {
 	if m.ReactToMessageFunc != nil {
 		return m.ReactToMessageFunc(ctx, chatJID, senderJID, messageID, emoji)
+	}
+	return nil
+}
+
+func (m *MockWAClient) RevokeMessage(ctx context.Context, chatJID, senderJID, messageID string) error {
+	if m.RevokeMessageFunc != nil {
+		return m.RevokeMessageFunc(ctx, chatJID, senderJID, messageID)
+	}
+	return nil
+}
+
+func (m *MockWAClient) EditMessage(ctx context.Context, chatJID, messageID, newText string) error {
+	if m.EditMessageFunc != nil {
+		return m.EditMessageFunc(ctx, chatJID, messageID, newText)
+	}
+	return nil
+}
+
+func (m *MockWAClient) MarkRead(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error {
+	if m.MarkReadFunc != nil {
+		return m.MarkReadFunc(ctx, messageIDs, timestamp, chatJID, senderJID)
 	}
 	return nil
 }

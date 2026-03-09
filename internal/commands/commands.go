@@ -256,6 +256,89 @@ func (a *App) ReactToMessage(ctx context.Context, messageID, emoji string, chatJ
 	return output.Success(result)
 }
 
+func (a *App) DeleteMessage(ctx context.Context, messageID string, chatJID *string) string {
+	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return output.Error(fmt.Errorf("message %s not found", messageID))
+		}
+		return output.Error(err)
+	}
+
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	senderJID := meta.Sender
+	if !strings.Contains(senderJID, "@") {
+		senderJID = senderJID + "@s.whatsapp.net"
+	}
+
+	if err := a.client.RevokeMessage(ctx, meta.ChatJID, senderJID, messageID); err != nil {
+		return output.Error(err)
+	}
+
+	return output.Success(map[string]interface{}{
+		"deleted":    true,
+		"message_id": messageID,
+		"chat_jid":   meta.ChatJID,
+	})
+}
+
+func (a *App) EditMessage(ctx context.Context, messageID, newText string, chatJID *string) string {
+	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return output.Error(fmt.Errorf("message %s not found", messageID))
+		}
+		return output.Error(err)
+	}
+
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	if err := a.client.EditMessage(ctx, meta.ChatJID, messageID, newText); err != nil {
+		return output.Error(err)
+	}
+
+	return output.Success(map[string]interface{}{
+		"edited":     true,
+		"message_id": messageID,
+		"chat_jid":   meta.ChatJID,
+		"new_text":   newText,
+	})
+}
+
+func (a *App) MarkMessageRead(ctx context.Context, messageID string, chatJID *string) string {
+	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return output.Error(fmt.Errorf("message %s not found", messageID))
+		}
+		return output.Error(err)
+	}
+
+	if err := a.client.Connect(ctx); err != nil {
+		return output.Error(err)
+	}
+
+	senderJID := meta.Sender
+	if !strings.Contains(senderJID, "@") {
+		senderJID = senderJID + "@s.whatsapp.net"
+	}
+
+	if err := a.client.MarkRead(ctx, []string{messageID}, meta.Timestamp, meta.ChatJID, senderJID); err != nil {
+		return output.Error(err)
+	}
+
+	return output.Success(map[string]interface{}{
+		"marked_read": true,
+		"message_id":  messageID,
+		"chat_jid":    meta.ChatJID,
+	})
+}
+
 func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption string) string {
 	if err := a.client.Connect(ctx); err != nil {
 		return output.Error(err)

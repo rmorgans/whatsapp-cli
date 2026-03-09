@@ -385,3 +385,194 @@ func TestReactToMessage_MessageNotFound(t *testing.T) {
 	require.NotNil(t, resp.Error)
 	require.Contains(t, *resp.Error, "not found")
 }
+
+// TestDeleteMessage_Success verifies that deleting a message looks up metadata and calls RevokeMessage.
+func TestDeleteMessage_Success(t *testing.T) {
+	var capturedChatJID, capturedSenderJID, capturedMessageID string
+
+	mockClient := &MockWAClient{
+		RevokeMessageFunc: func(ctx context.Context, chatJID, senderJID, messageID string) error {
+			capturedChatJID = chatJID
+			capturedSenderJID = senderJID
+			capturedMessageID = messageID
+			return nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			require.Equal(t, "msg-456", id)
+			return store.Message{
+				ID:      "msg-456",
+				ChatJID: "chat@s.whatsapp.net",
+				Sender:  "5511999999999",
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.DeleteMessage(context.Background(), "msg-456", nil)
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, true, data["deleted"])
+	require.Equal(t, "msg-456", data["message_id"])
+	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+
+	require.Equal(t, "chat@s.whatsapp.net", capturedChatJID)
+	require.Equal(t, "5511999999999@s.whatsapp.net", capturedSenderJID)
+	require.Equal(t, "msg-456", capturedMessageID)
+}
+
+// TestDeleteMessage_NotFound verifies error when message is not in store.
+func TestDeleteMessage_NotFound(t *testing.T) {
+	mockClient := &MockWAClient{}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{}, sql.ErrNoRows
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.DeleteMessage(context.Background(), "nonexistent-id", nil)
+
+	resp := parseResponse(t, result)
+	require.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+	require.Contains(t, *resp.Error, "not found")
+}
+
+// TestEditMessage_Success verifies that editing a message looks up metadata and calls EditMessage.
+func TestEditMessage_Success(t *testing.T) {
+	var capturedChatJID, capturedMessageID, capturedNewText string
+
+	mockClient := &MockWAClient{
+		EditMessageFunc: func(ctx context.Context, chatJID, messageID, newText string) error {
+			capturedChatJID = chatJID
+			capturedMessageID = messageID
+			capturedNewText = newText
+			return nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			require.Equal(t, "msg-789", id)
+			return store.Message{
+				ID:      "msg-789",
+				ChatJID: "group@g.us",
+				Sender:  "5511999999999@s.whatsapp.net",
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.EditMessage(context.Background(), "msg-789", "updated text", nil)
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, true, data["edited"])
+	require.Equal(t, "msg-789", data["message_id"])
+	require.Equal(t, "group@g.us", data["chat_jid"])
+	require.Equal(t, "updated text", data["new_text"])
+
+	require.Equal(t, "group@g.us", capturedChatJID)
+	require.Equal(t, "msg-789", capturedMessageID)
+	require.Equal(t, "updated text", capturedNewText)
+}
+
+// TestEditMessage_NotFound verifies error when message is not in store.
+func TestEditMessage_NotFound(t *testing.T) {
+	mockClient := &MockWAClient{}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{}, sql.ErrNoRows
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.EditMessage(context.Background(), "nonexistent-id", "new text", nil)
+
+	resp := parseResponse(t, result)
+	require.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+	require.Contains(t, *resp.Error, "not found")
+}
+
+// TestMarkMessageRead_Success verifies that marking a message read looks up metadata and calls MarkRead.
+func TestMarkMessageRead_Success(t *testing.T) {
+	var capturedIDs []string
+	var capturedTimestamp time.Time
+	var capturedChatJID, capturedSenderJID string
+
+	msgTime := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+
+	mockClient := &MockWAClient{
+		MarkReadFunc: func(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error {
+			capturedIDs = messageIDs
+			capturedTimestamp = timestamp
+			capturedChatJID = chatJID
+			capturedSenderJID = senderJID
+			return nil
+		},
+	}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			require.Equal(t, "msg-read-1", id)
+			return store.Message{
+				ID:        "msg-read-1",
+				ChatJID:   "chat@s.whatsapp.net",
+				Sender:    "5511888888888",
+				Timestamp: msgTime,
+			}, nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.MarkMessageRead(context.Background(), "msg-read-1", nil)
+
+	resp := parseResponse(t, result)
+	require.True(t, resp.Success, "should succeed: %v", resp.Error)
+
+	var data map[string]interface{}
+	err := json.Unmarshal(resp.Data, &data)
+	require.NoError(t, err)
+	require.Equal(t, true, data["marked_read"])
+	require.Equal(t, "msg-read-1", data["message_id"])
+	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+
+	require.Equal(t, []string{"msg-read-1"}, capturedIDs)
+	require.Equal(t, msgTime, capturedTimestamp)
+	require.Equal(t, "chat@s.whatsapp.net", capturedChatJID)
+	require.Equal(t, "5511888888888@s.whatsapp.net", capturedSenderJID)
+}
+
+// TestMarkMessageRead_NotFound verifies error when message is not in store.
+func TestMarkMessageRead_NotFound(t *testing.T) {
+	mockClient := &MockWAClient{}
+	mockStore := &MockMessageStore{
+		GetMessageMetadataFunc: func(id string, chatJID *string) (store.Message, error) {
+			return store.Message{}, sql.ErrNoRows
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
+
+	result := app.MarkMessageRead(context.Background(), "nonexistent-id", nil)
+
+	resp := parseResponse(t, result)
+	require.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+	require.Contains(t, *resp.Error, "not found")
+}

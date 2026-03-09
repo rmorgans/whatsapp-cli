@@ -475,6 +475,61 @@ func (w *WAClient) ReactToMessage(ctx context.Context, chatJID, senderJID, messa
 	return err
 }
 
+func (w *WAClient) RevokeMessage(ctx context.Context, chatJID, senderJID, messageID string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	chat, err := waTypes.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("parsing chat JID: %w", err)
+	}
+
+	sender, err := waTypes.ParseJID(senderJID)
+	if err != nil {
+		return fmt.Errorf("parsing sender JID: %w", err)
+	}
+
+	msg := w.client.BuildRevoke(chat, sender, messageID)
+	_, err = w.client.SendMessage(ctx, chat, msg)
+	return err
+}
+
+func (w *WAClient) EditMessage(ctx context.Context, chatJID, messageID, newText string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	chat, err := waTypes.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("parsing chat JID: %w", err)
+	}
+
+	msg := w.client.BuildEdit(chat, messageID, &waProto.Message{
+		Conversation: proto.String(newText),
+	})
+	_, err = w.client.SendMessage(ctx, chat, msg)
+	return err
+}
+
+func (w *WAClient) MarkRead(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error {
+	if !w.client.IsConnected() {
+		return fmt.Errorf("not connected to WhatsApp")
+	}
+
+	chat, err := waTypes.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("parsing chat JID: %w", err)
+	}
+
+	sender, err := waTypes.ParseJID(senderJID)
+	if err != nil {
+		return fmt.Errorf("parsing sender JID: %w", err)
+	}
+
+	return w.client.MarkRead(ctx, messageIDs, timestamp, chat, sender)
+}
+
 func parseJID(recipient string) (waTypes.JID, error) {
 	// If already a JID, parse it
 	if strings.Contains(recipient, "@") {

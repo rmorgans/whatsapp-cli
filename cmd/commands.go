@@ -187,6 +187,49 @@ func registerAll(reg *r.Registry) {
 	}
 	reg.Register(react)
 
+	// messages delete
+	msgDelete := r.MustNewLeafSpec("messages.delete", r.MustNewPath("messages", "delete"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.DeleteMessage(ctx, f.String("message-id"), optStr(f, "chat")), nil
+		},
+	)
+	msgDelete.Doc = r.DocSpec{Short: "Delete (revoke) a message"}
+	msgDelete.Exec = r.Bounded(0)
+	msgDelete.Flags = []r.Flag{
+		r.StringFlag{Name: "message-id", Help: "message to delete", Required: true},
+		r.StringFlag{Name: "chat", Help: "chat JID (required if message ID is ambiguous)"},
+	}
+	reg.Register(msgDelete)
+
+	// messages edit
+	msgEdit := r.MustNewLeafSpec("messages.edit", r.MustNewPath("messages", "edit"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.EditMessage(ctx, f.String("message-id"), f.String("text"), optStr(f, "chat")), nil
+		},
+	)
+	msgEdit.Doc = r.DocSpec{Short: "Edit a message"}
+	msgEdit.Exec = r.Bounded(0)
+	msgEdit.Flags = []r.Flag{
+		r.StringFlag{Name: "message-id", Help: "message to edit", Required: true},
+		r.StringFlag{Name: "text", Help: "new message text", Required: true},
+		r.StringFlag{Name: "chat", Help: "chat JID (required if message ID is ambiguous)"},
+	}
+	reg.Register(msgEdit)
+
+	// messages mark-read
+	msgMarkRead := r.MustNewLeafSpec("messages.mark-read", r.MustNewPath("messages", "mark-read"),
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+			return app.MarkMessageRead(ctx, f.String("message-id"), optStr(f, "chat")), nil
+		},
+	)
+	msgMarkRead.Doc = r.DocSpec{Short: "Mark a message as read"}
+	msgMarkRead.Exec = r.Bounded(0)
+	msgMarkRead.Flags = []r.Flag{
+		r.StringFlag{Name: "message-id", Help: "message to mark as read", Required: true},
+		r.StringFlag{Name: "chat", Help: "chat JID (required if message ID is ambiguous)"},
+	}
+	reg.Register(msgMarkRead)
+
 	// -----------------------------------------------------------------
 	// contacts (parent)
 	// -----------------------------------------------------------------
