@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -329,9 +330,8 @@ func TestPrintResult_SetsExitCodeOnFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r := NewRegistry()
-			// Capture stdout by temporarily redirecting.
-			// printResult writes to stdout via fmt.Println; we just check exitCode.
-			r.printResult(tc.json)
+			r.SetWriter(io.Discard)
+			r.printResult("test-cmd", tc.json)
 			assert.Equal(t, tc.wantCode, r.exitCode)
 		})
 	}

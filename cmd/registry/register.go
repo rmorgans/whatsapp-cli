@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vicentereig/whatsapp-cli/internal/commands"
+	"github.com/vicentereig/whatsapp-cli/internal/output"
+	"golang.org/x/term"
 )
 
 const defaultTimeout = 5 * time.Minute
@@ -23,14 +26,16 @@ const defaultTimeout = 5 * time.Minute
 
 // Registry holds the root cobra command and tracks registered commands.
 type Registry struct {
-	version  string
-	storeDir string
-	app      *commands.App
-	exitCode int
-	root     *cobra.Command
-	parents  map[string]*cobra.Command
-	ids      map[string]bool
-	paths    map[string]bool
+	version    string
+	storeDir   string
+	outputFlag string // raw --output flag value
+	app        *commands.App
+	exitCode   int
+	root       *cobra.Command
+	parents    map[string]*cobra.Command
+	ids        map[string]bool
+	paths      map[string]bool
+	writer     io.Writer // output destination; defaults to os.Stdout
 }
 
 // NewRegistry creates a new Registry with an initialised root command.
@@ -39,6 +44,7 @@ func NewRegistry() *Registry {
 		parents: make(map[string]*cobra.Command),
 		ids:     make(map[string]bool),
 		paths:   make(map[string]bool),
+		writer:  os.Stdout,
 	}
 	r.root = newRootCmd(r)
 	return r
@@ -52,6 +58,9 @@ func (r *Registry) Version() string { return r.version }
 
 // Root returns the root cobra command for testing.
 func (r *Registry) Root() *cobra.Command { return r.root }
+
+// SetWriter overrides the output writer (default os.Stdout). Intended for tests.
+func (r *Registry) SetWriter(w io.Writer) { r.writer = w }
 
 // ---------------------------------------------------------------------------
 // newRootCmd
@@ -68,6 +77,15 @@ func newRootCmd(r *Registry) *cobra.Command {
 	cmd.SetOut(os.Stderr)
 	cmd.SetErr(os.Stderr)
 	cmd.PersistentFlags().StringVar(&r.storeDir, "store", "./store", "storage directory")
+	cmd.PersistentFlags().StringVar(&r.outputFlag, "output", "json", "output format: json, human, or auto")
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		switch r.outputFlag {
+		case "json", "human", "auto":
+			return nil
+		default:
+			return fmt.Errorf("--output must be one of [json, human, auto], got %q", r.outputFlag)
+		}
+	}
 	return cmd
 }
 
@@ -326,16 +344,16 @@ func (r *Registry) buildRunE(spec LeafSpec) func(*cobra.Command, []string) error
 		if spec.Exec.IsLocal() {
 			result, err := spec.Run(cmd.Context(), nil, fv)
 			if err != nil {
-				r.printResult(errorJSON(err.Error()))
+				r.printResult(spec.ID, errorJSON(err.Error()))
 				return nil
 			}
-			r.printResult(result)
+			r.printResult(spec.ID, result)
 			return nil
 		}
 
 		// Bounded or Streaming: needs app.
 		if err := r.initApp(); err != nil {
-			r.printResult(errorJSON(err.Error()))
+			r.printResult(spec.ID, errorJSON(err.Error()))
 			return nil
 		}
 		defer r.closeApp()
@@ -345,10 +363,10 @@ func (r *Registry) buildRunE(spec LeafSpec) func(*cobra.Command, []string) error
 
 		result, err := spec.Run(ctx, r.app, fv)
 		if err != nil {
-			r.printResult(errorJSON(err.Error()))
+			r.printResult(spec.ID, errorJSON(err.Error()))
 			return nil
 		}
-		r.printResult(result)
+		r.printResult(spec.ID, result)
 		return nil
 	}
 }
@@ -364,18 +382,63 @@ func errorJSON(msg string) string {
 }
 
 // ---------------------------------------------------------------------------
+// resolveOutputMode
+// ---------------------------------------------------------------------------
+
+// resolveOutputMode converts the --output flag value to an OutputMode.
+func (r *Registry) resolveOutputMode() output.OutputMode {
+	switch r.outputFlag {
+	case "human":
+		return output.ModeHuman
+	case "auto":
+		if f, ok := r.writer.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+			return output.ModeHuman
+		}
+		return output.ModeJSON
+	default:
+		return output.ModeJSON
+	}
+}
+
+// ---------------------------------------------------------------------------
 // printResult
 // ---------------------------------------------------------------------------
 
-func (r *Registry) printResult(result string) {
-	fmt.Println(result)
-
-	var envelope struct {
-		Success bool `json:"success"`
+func (r *Registry) printResult(commandID, result string) {
+	env, err := output.ParseEnvelope(result)
+	if err != nil {
+		// Parse failure: print raw result, exit 1.
+		fmt.Fprintln(r.writer, result)
+		r.exitCode = 1
+		return
 	}
-	if err := json.Unmarshal([]byte(result), &envelope); err != nil || !envelope.Success {
+
+	// Derive exit code from envelope.
+	if !env.Success {
 		r.exitCode = 1
 	}
+
+	mode := r.resolveOutputMode()
+
+	if mode == output.ModeJSON {
+		fmt.Fprintln(r.writer, result)
+		return
+	}
+
+	// ModeHuman: try per-command formatter first.
+	if formatted, ok := output.FormatHuman(commandID, env); ok {
+		fmt.Fprintln(r.writer, formatted)
+		return
+	}
+
+	// Try generic formatter.
+	if formatted, err := output.GenericFormat(env); err == nil {
+		fmt.Fprintln(r.writer, formatted)
+		return
+	}
+
+	// Last resort: raw JSON.
+	fmt.Fprintln(r.writer, result)
 }
 
 // ---------------------------------------------------------------------------
@@ -583,7 +646,7 @@ func validateEnums(fv FlagValues, flags []Flag) error {
 // exit 2 for cobra/usage errors, exit 1 for runtime errors.
 func (r *Registry) Execute() {
 	if err := r.root.Execute(); err != nil {
-		fmt.Println(errorJSON(err.Error()))
+		fmt.Fprintln(r.writer, errorJSON(err.Error()))
 		os.Exit(2)
 	}
 	if r.exitCode != 0 {
