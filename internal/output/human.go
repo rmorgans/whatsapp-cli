@@ -19,19 +19,19 @@ var registry = map[string]humanFormatter{
 	"contacts.search":       formatContacts,
 	"media.download":        formatMediaDownload,
 	"messages.react":        formatMessagesReact,
-	"messages.delete":       formatMessagesDelete,
-	"messages.edit":         formatMessagesEdit,
-	"messages.mark-read":    formatMessagesMarkRead,
-	"contacts.block":        formatContactsBlock,
-	"contacts.unblock":      formatContactsUnblock,
+	"messages.delete":       messageIDFormatter("Deleted message %s"),
+	"messages.edit":         messageIDFormatter("Edited message %s"),
+	"messages.mark-read":    messageIDFormatter("Marked %s as read"),
+	"contacts.block":        jidFormatter("Blocked %s"),
+	"contacts.unblock":      jidFormatter("Unblocked %s"),
 	"groups.create":         formatGroupsCreate,
-	"groups.join":           formatGroupsJoin,
-	"groups.leave":          formatGroupsLeave,
-	"groups.add-members":    formatGroupsAddMembers,
-	"groups.remove-members": formatGroupsRemoveMembers,
-	"groups.set-name":       formatGroupsSetName,
-	"groups.set-description": formatGroupsSetDescription,
-	"groups.set-photo":      formatGroupsSetPhoto,
+	"groups.join":           jidFormatter("Joined group (%s)"),
+	"groups.leave":          jidFormatter("Left group (%s)"),
+	"groups.add-members":    jidFormatter("Added members to %s"),
+	"groups.remove-members": jidFormatter("Removed members from %s"),
+	"groups.set-name":       jidFormatter("Updated group %s"),
+	"groups.set-description": jidFormatter("Updated group %s"),
+	"groups.set-photo":      jidFormatter("Updated group %s"),
 	"groups.invite-link":    formatGroupsInviteLink,
 }
 
@@ -91,6 +91,7 @@ type mediaDownloadData struct {
 	MessageID string `json:"message_id"`
 	Path      string `json:"path"`
 	Bytes     int64  `json:"bytes"`
+	MediaType string `json:"media_type"`
 }
 
 type reactData struct {
@@ -219,7 +220,11 @@ func formatMediaDownload(env Envelope) (string, error) {
 	if err := json.Unmarshal(env.Data, &d); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Downloaded media (%s) -> %s", formatBytes(d.Bytes), d.Path), nil
+	label := "media"
+	if d.MediaType != "" {
+		label = strings.ToLower(d.MediaType)
+	}
+	return fmt.Sprintf("Downloaded %s (%s) -> %s", label, formatBytes(d.Bytes), d.Path), nil
 }
 
 func formatMessagesReact(env Envelope) (string, error) {
@@ -230,44 +235,28 @@ func formatMessagesReact(env Envelope) (string, error) {
 	return fmt.Sprintf("Reacted %s to message %s", d.Emoji, d.MessageID), nil
 }
 
-func formatMessagesDelete(env Envelope) (string, error) {
-	var d messageIDData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
+// jidFormatter returns a humanFormatter that unmarshals a JID
+// and applies the given format string (must contain one %s verb).
+func jidFormatter(tmpl string) humanFormatter {
+	return func(env Envelope) (string, error) {
+		var d jidData
+		if err := json.Unmarshal(env.Data, &d); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf(tmpl, d.JID), nil
 	}
-	return fmt.Sprintf("Deleted message %s", d.MessageID), nil
 }
 
-func formatMessagesEdit(env Envelope) (string, error) {
-	var d messageIDData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
+// messageIDFormatter returns a humanFormatter that unmarshals a message ID
+// and applies the given format string (must contain one %s verb).
+func messageIDFormatter(tmpl string) humanFormatter {
+	return func(env Envelope) (string, error) {
+		var d messageIDData
+		if err := json.Unmarshal(env.Data, &d); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf(tmpl, d.MessageID), nil
 	}
-	return fmt.Sprintf("Edited message %s", d.MessageID), nil
-}
-
-func formatMessagesMarkRead(env Envelope) (string, error) {
-	var d messageIDData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Marked %s as read", d.MessageID), nil
-}
-
-func formatContactsBlock(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Blocked %s", d.JID), nil
-}
-
-func formatContactsUnblock(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Unblocked %s", d.JID), nil
 }
 
 func formatGroupsCreate(env Envelope) (string, error) {
@@ -276,62 +265,6 @@ func formatGroupsCreate(env Envelope) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Created group %q (%s)", d.Name, d.JID), nil
-}
-
-func formatGroupsJoin(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Joined group (%s)", d.JID), nil
-}
-
-func formatGroupsLeave(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Left group (%s)", d.JID), nil
-}
-
-func formatGroupsAddMembers(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Added members to %s", d.JID), nil
-}
-
-func formatGroupsRemoveMembers(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Removed members from %s", d.JID), nil
-}
-
-func formatGroupsSetName(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Updated group %s", d.JID), nil
-}
-
-func formatGroupsSetDescription(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Updated group %s", d.JID), nil
-}
-
-func formatGroupsSetPhoto(env Envelope) (string, error) {
-	var d jidData
-	if err := json.Unmarshal(env.Data, &d); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Updated group %s", d.JID), nil
 }
 
 func formatGroupsInviteLink(env Envelope) (string, error) {

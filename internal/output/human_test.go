@@ -279,29 +279,34 @@ func TestFormatMediaDownload(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		bytes int64
-		want  string
+		name      string
+		bytes     int64
+		mediaType string
+		want      string
 	}{
 		{
-			name:  "megabytes",
-			bytes: 1234567,
-			want:  "Downloaded media (1.2 MB) -> /tmp/photo.jpg",
+			name:      "image with MB",
+			bytes:     1234567,
+			mediaType: "image",
+			want:      "Downloaded image (1.2 MB) -> /tmp/photo.jpg",
 		},
 		{
-			name:  "kilobytes",
-			bytes: 456000,
-			want:  "Downloaded media (445 KB) -> /tmp/photo.jpg",
+			name:      "video with KB",
+			bytes:     456000,
+			mediaType: "video",
+			want:      "Downloaded video (445 KB) -> /tmp/photo.jpg",
 		},
 		{
-			name:  "bytes",
-			bytes: 512,
-			want:  "Downloaded media (512 B) -> /tmp/photo.jpg",
+			name:      "no media type falls back to media",
+			bytes:     512,
+			mediaType: "",
+			want:      "Downloaded media (512 B) -> /tmp/photo.jpg",
 		},
 		{
-			name:  "gigabytes",
-			bytes: 2147483648,
-			want:  "Downloaded media (2.0 GB) -> /tmp/photo.jpg",
+			name:      "document with GB",
+			bytes:     2147483648,
+			mediaType: "document",
+			want:      "Downloaded document (2.0 GB) -> /tmp/photo.jpg",
 		},
 	}
 
@@ -312,6 +317,7 @@ func TestFormatMediaDownload(t *testing.T) {
 				"message_id": "m1",
 				"path":       "/tmp/photo.jpg",
 				"bytes":      tt.bytes,
+				"media_type": tt.mediaType,
 			}, nil)
 			got, err := formatMediaDownload(env)
 			require.NoError(t, err)
