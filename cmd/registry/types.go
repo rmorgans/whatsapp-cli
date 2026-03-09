@@ -5,6 +5,7 @@ package registry
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/vicentereig/whatsapp-cli/internal/commands"
@@ -30,7 +31,7 @@ func MustNewPath(segments ...string) CommandPath {
 	}
 	for i, s := range segments {
 		if s == "" {
-			panic("registry.MustNewPath: segment at index " + itoa(i) + " is empty")
+			panic("registry.MustNewPath: segment at index " + strconv.Itoa(i) + " is empty")
 		}
 	}
 	return CommandPath{
@@ -53,59 +54,52 @@ func (p CommandPath) Segments() []string {
 	return out
 }
 
-// itoa converts a small non-negative int to a string without importing strconv.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := [20]byte{}
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[pos:])
-}
-
 // ---------------------------------------------------------------------------
 // ExecMode
 // ---------------------------------------------------------------------------
+
+// execKind is the internal discriminant for ExecMode.
+type execKind int
+
+const (
+	execBounded   execKind = iota // default zero value
+	execStreaming
+	execLocal
+)
 
 // ExecMode describes how a command executes. Exactly one of Bounded,
 // Streaming, or Local. The zero value is Bounded with zero timeout
 // (which the wiring layer should treat as a sensible default).
 type ExecMode struct {
-	streaming bool
-	local     bool
-	timeout   time.Duration
+	kind    execKind
+	timeout time.Duration
 }
 
 // Bounded returns an ExecMode for commands that complete within a timeout.
 func Bounded(timeout time.Duration) ExecMode {
-	return ExecMode{timeout: timeout}
+	return ExecMode{kind: execBounded, timeout: timeout}
 }
 
 // Streaming returns an ExecMode for long-running commands (e.g. sync)
 // that stream output until cancelled.
 func Streaming() ExecMode {
-	return ExecMode{streaming: true}
+	return ExecMode{kind: execStreaming}
 }
 
 // Local returns an ExecMode for commands that run entirely locally
 // (no network, no timeout needed).
 func Local() ExecMode {
-	return ExecMode{local: true}
+	return ExecMode{kind: execLocal}
 }
 
 // IsStreaming reports whether this mode is Streaming.
-func (m ExecMode) IsStreaming() bool { return m.streaming }
+func (m ExecMode) IsStreaming() bool { return m.kind == execStreaming }
 
 // IsLocal reports whether this mode is Local.
-func (m ExecMode) IsLocal() bool { return m.local }
+func (m ExecMode) IsLocal() bool { return m.kind == execLocal }
 
 // IsBounded reports whether this mode is Bounded (the default).
-func (m ExecMode) IsBounded() bool { return !m.streaming && !m.local }
+func (m ExecMode) IsBounded() bool { return m.kind == execBounded }
 
 // Timeout returns the timeout for Bounded mode, or zero for other modes.
 func (m ExecMode) Timeout() time.Duration { return m.timeout }
@@ -268,6 +262,9 @@ func MustNewLeafSpec(id string, path CommandPath, run Runner) LeafSpec {
 	}
 	if id == "" {
 		panic("registry.MustNewLeafSpec: id must not be empty")
+	}
+	if path.Name() == "" {
+		panic("registry.MustNewLeafSpec: path must not be zero-value (empty name)")
 	}
 	return LeafSpec{
 		ID:   id,
