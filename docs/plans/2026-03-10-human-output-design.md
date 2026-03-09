@@ -2,11 +2,11 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a human-readable output mode so the CLI is usable in a terminal without piping through `jq`, while preserving the JSON agent contract.
+**Goal:** Add a human-readable output mode so the CLI is usable in a terminal without piping through `jq`, while preserving the JSON agent contract as the default.
 
-**Architecture:** Formatting is a presentation concern in the registry layer. Commands still return JSON strings. The registry parses the envelope once and dispatches to a formatter. TTY auto-detection picks the default mode; `--output` overrides.
+**Architecture:** Formatting is a presentation concern in the registry layer. Commands still return JSON strings. The registry parses the envelope once and dispatches to a formatter. JSON is always the default; `--output human` is opt-in.
 
-**Tech Stack:** Go stdlib (`os.IsTerminal`), `encoding/json`, no new dependencies.
+**Tech Stack:** Go stdlib (`encoding/json`), `golang.org/x/term` (for TTY detection via `term.IsTerminal`). Single new dependency.
 
 ---
 
@@ -40,13 +40,23 @@ type Formatter func(ctx RenderContext, env Envelope) (string, error)
 ## Output Mode Resolution
 
 ```
-1. --output json  → ModeJSON  (explicit override)
-2. --output human → ModeHuman (explicit override)
-3. stdout is TTY  → ModeHuman (auto-detect)
-4. stdout is pipe → ModeJSON  (auto-detect)
+1. --output json    → ModeJSON  (explicit, default)
+2. --output human   → ModeHuman (explicit opt-in)
+3. --output auto    → TTY detection: terminal → ModeHuman, pipe → ModeJSON
+4. no --output flag → ModeJSON  (AX contract preserved)
 ```
 
+**Rationale:** JSON stays the default to preserve the AX contract documented in `docs/AX-CONTRACT.md`. Agents never need to pass `--output json` defensively. Humans opt in with `--output human` or `--output auto`. A shell alias (`alias wa='whatsapp-cli --output auto'`) gives humans the ergonomic default.
+
 `--output` is a persistent flag on the root command, same level as `--store`.
+
+**TTY detection:** Uses `term.IsTerminal(int(os.Stdout.Fd()))` from `golang.org/x/term`. Only consulted when `--output auto` is set.
+
+## AX Contract Update
+
+When this ships, `docs/AX-CONTRACT.md` gains one line:
+
+> The `--output` flag controls stdout format. Default is `json`. Agents should not pass `--output` (or pass `--output json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
 
 ## printResult Changes
 
@@ -54,41 +64,59 @@ type Formatter func(ctx RenderContext, env Envelope) (string, error)
 printResult(commandID, commandPath, result string):
     1. Parse JSON envelope → Envelope
        - If parse fails: print raw result, set exit code 1, return
-    2. If ModeJSON: print raw result (existing path, byte-identical)
-    3. If ModeHuman:
+    2. Derive exit code from parsed envelope:
+       - envelope.Success == true  → exit 0
+       - envelope.Success == false → exit 1
+    3. If ModeJSON: print raw result (existing path, byte-identical), return
+    4. If ModeHuman:
        a. Look up command formatter in map[commandID]Formatter
        b. If found: call it
-          - If it errors: fall through to (c)
+          - If it returns error: fall through to (c)
        c. Generic formatter as fallback
+          - If it returns error: print raw JSON result (last resort)
        d. Print formatted result to stdout
-    4. Parse success field for exit code (existing logic)
 ```
+
+**Key change from current code:** Step 4 in the old `printResult` re-parsed the JSON to check `success`. Now step 2 derives exit code from the already-parsed Envelope. Single parse, no duplication.
 
 **Invariants:**
 - JSON mode output is byte-identical to current behavior
 - Stderr behavior unchanged (progress, warnings stay on stderr)
 - Human mode only changes stdout presentation
 - Exit codes unchanged
+- Parse failure → raw output + exit 1 (deterministic)
 
-## Generic Formatter
+## Generic Formatter — Deterministic Spec
 
-Handles any command without a custom formatter:
+Handles any command without a custom formatter. Output is fully deterministic given the same input.
 
-| Data shape | Rendering |
-|-----------|-----------|
-| `null` | (nothing, or "No results.") |
-| Array of objects | Table with column headers from keys |
-| Array of scalars | One per line |
-| Object with status bool | One-liner: "Done." / key-value summary |
-| Scalar | Plain text |
+### Dispatch rules (checked in order):
 
-**Errors** (success=false): Print error message to stdout, styled if terminal supports it.
+1. **Error** (success=false): Print `Error: <error message>` to stdout.
+2. **Null data** (success=true, data is JSON `null`): Print `No results.`
+3. **Empty array** (success=true, data is `[]`): Print `No results.`
+4. **Array of objects**: Render as table (see table rules below).
+5. **Array of scalars**: One value per line, no header.
+6. **Object**: Render as key-value block (see key-value rules below).
+7. **Scalar** (string/number/bool): Print the value directly.
 
-**Table formatting rules:**
-- Column widths: auto-sized to content, max 40 chars per column, truncate with `…`
-- Timestamps: relative when <7 days ("2h ago", "yesterday"), date otherwise
-- Long content fields: truncate to terminal width
-- Boolean fields: render as `yes`/`no`
+### Table rules (arrays of objects):
+
+- **Column order**: Determined by key order in the *first* object in the array. JSON object key order from `encoding/json` is preserved (Go maps are random, but `json.RawMessage` preserves source order; we unmarshal to `[]map[string]interface{}` but iterate in insertion order via a helper).
+- **Alternative**: Use an explicit column-priority list per known data shape. For unknown shapes, alphabetical order.
+- **Column headers**: Uppercase of key name, underscores replaced with spaces. `chat_jid` → `CHAT JID`.
+- **Column widths**: Auto-sized to max content width, capped at 40 chars. Values exceeding cap are truncated with `…`.
+- **Total width**: Capped at 120 chars. Rightmost columns dropped if they don't fit.
+- **Timestamps** (any value matching RFC3339): Render as relative time if <7 days (`2h ago`, `yesterday`, `3 days ago`), otherwise short date (`Mar 3`, `Jan 15 2025`).
+- **Booleans**: `yes` / `no`.
+- **Nested objects/arrays**: Render as `{...}` / `[...]` (collapsed, not expanded). These are rare in practice.
+- **Null values**: Render as empty string (blank cell).
+
+### Key-value rules (single objects):
+
+- **Key order**: Same as source JSON key order (or alphabetical fallback).
+- **Format**: `Key: value` one per line, key right-padded to align values.
+- **Timestamps/booleans/nested**: Same rules as table cells.
 
 ## Per-Command Formatters (initial set)
 
@@ -96,53 +124,53 @@ Only where generic output is noticeably poor:
 
 ### `send` (and all send variants)
 ```
-✓ Sent to 61412345678 (ID: ABC123)
+Sent to 61412345678 (ID: ABC123)
 ```
 
-### `messages list` / `messages search`
+### `messages.list` / `messages.search`
 ```
-  TIME        CHAT            SENDER    MESSAGE
-  2h ago      Rick Morgans    me        Hey, how's it going?
-  yesterday   Family Group    Dad       See you Sunday
-  Mar 3       Work Chat       Alice     The deploy is done [Image]
-```
-
-### `chats list`
-```
-  LAST ACTIVE   NAME              JID
-  2h ago        Rick Morgans      120363422782024172@g.us
-  yesterday     Family Group      120363012345678@g.us
-  Mar 3         Work Chat         61412345678@s.whatsapp.net
+TIME        CHAT            SENDER    MESSAGE
+2h ago      Rick Morgans    me        Hey, how's it going?
+yesterday   Family Group    Dad       See you Sunday
+Mar 3       Work Chat       Alice     The deploy is done [Image]
 ```
 
-### `groups list`
+### `chats.list`
 ```
-  NAME              MEMBERS   JID
-  Family Group      5         120363012345678@g.us
-  Work Chat         12        120363098765432@g.us
-```
-
-### `contacts search`
-```
-  NAME          PHONE           JID
-  John Doe      61412345678     61412345678@s.whatsapp.net
-  Jane Smith    61487654321     61487654321@s.whatsapp.net
+LAST ACTIVE   NAME              JID
+2h ago        Rick Morgans      120363422782024172@g.us
+yesterday     Family Group      120363012345678@g.us
+Mar 3         Work Chat         61412345678@s.whatsapp.net
 ```
 
-### `media download`
+### `groups.list`
 ```
-✓ Downloaded image (1.2 MB) → /tmp/photo.jpg
+NAME              MEMBERS   JID
+Family Group      5         120363012345678@g.us
+Work Chat         12        120363098765432@g.us
 ```
 
-### Mutation one-liners
+### `contacts.search`
 ```
-messages react:     ✓ Reacted 👍 to message ABC123
-messages delete:    ✓ Deleted message ABC123
-messages edit:      ✓ Edited message ABC123
-messages mark-read: ✓ Marked ABC123 as read
-contacts block:     ✓ Blocked 61412345678@s.whatsapp.net
-groups create:      ✓ Created group "Family" (120363012345678@g.us)
-groups join:        ✓ Joined group (120363012345678@g.us)
+NAME          PHONE           JID
+John Doe      61412345678     61412345678@s.whatsapp.net
+Jane Smith    61487654321     61487654321@s.whatsapp.net
+```
+
+### `media.download`
+```
+Downloaded image (1.2 MB) -> /tmp/photo.jpg
+```
+
+### Mutation one-liners (send, react, delete, edit, mark-read, block, groups)
+```
+Reacted 👍 to message ABC123
+Deleted message ABC123
+Edited message ABC123
+Marked ABC123 as read
+Blocked 61412345678@s.whatsapp.net
+Created group "Family" (120363012345678@g.us)
+Joined group (120363012345678@g.us)
 ```
 
 ### Everything else
@@ -155,16 +183,17 @@ internal/output/
 ├── output.go          # Existing: Success(), Error(), Result type
 ├── envelope.go        # NEW: Envelope, RenderContext, OutputMode, Formatter type
 ├── generic.go         # NEW: generic formatter (table, key-value, one-liner)
-├── human.go           # NEW: per-command formatters + registry
-└── human_test.go      # NEW: tests for formatters
+├── generic_test.go    # NEW: deterministic tests for generic formatter
+├── human.go           # NEW: per-command formatters + formatter registry
+└── human_test.go      # NEW: tests for per-command formatters
 ```
 
 ## What Changes in Existing Files
 
 - `cmd/registry/register.go`:
-  - Add `--output` persistent flag
-  - Add TTY detection in `Execute()` or `buildRunE()`
-  - Change `printResult` to accept command ID/path and dispatch
+  - Add `--output` persistent flag (string, default "json", enum: json/human/auto)
+  - Resolve OutputMode in `Execute()` before command runs
+  - Change `printResult` to accept command ID/path, parse envelope once, dispatch
   - Registry holds `outputMode OutputMode` and `formatters map[string]Formatter`
 
 - `cmd/registry/types.go` or `register.go`:
@@ -174,23 +203,26 @@ internal/output/
 
 - `cmd/commands.go`: **No changes.**
 - `internal/commands/*.go`: **No changes.**
+- `go.mod`: Add `golang.org/x/term` dependency.
 
 ## Testing Strategy
 
-- **Unit tests** for each formatter: pass known Envelope, assert output string
-- **Unit tests** for generic formatter: arrays, objects, scalars, nulls, errors
-- **Integration test**: build binary, run with `--output human`, verify non-JSON stdout
-- **Integration test**: build binary, pipe to `cat`, verify JSON output (TTY detection)
-- **Existing tests unchanged**: they don't check stdout format (they parse JSON)
+- **Unit tests** for generic formatter: every dispatch rule (null, empty array, array of objects, array of scalars, object, scalar, error). Assert exact output strings.
+- **Unit tests** for each per-command formatter: pass known Envelope, assert output string.
+- **Unit tests** for table formatter: column ordering, truncation, timestamp rendering, boolean rendering, nested collapse, null cells.
+- **Integration test**: build binary, run with `--output human`, verify non-JSON stdout.
+- **Integration test**: build binary, run with no `--output`, verify JSON stdout (default preserved).
+- **Existing tests unchanged**: they don't pass `--output`, so they get JSON (default).
 
 ## Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| TTY detection wrong in CI | Low | Med | `--output json` always overrides |
+| `x/term` not available | Very Low | Med | Widely used, stable, no CGO |
 | Custom formatter panics | Low | High | Recover in dispatch, fall through to generic |
-| Terminal width unknown | Low | Low | Default to 80 columns |
+| Terminal width unknown | Low | Low | Default to 120 columns |
 | New commands forget formatter | Expected | Low | Generic handles everything |
+| JSON key order non-deterministic | Med | Low | Use ordered unmarshaling or explicit column lists |
 
 ## Non-Goals
 
@@ -199,3 +231,4 @@ internal/output/
 - Changing any command's return value or error handling
 - Changing stderr output
 - Changing exit codes
+- Making human mode the default (JSON stays default per AX contract)
