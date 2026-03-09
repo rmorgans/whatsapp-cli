@@ -14,7 +14,7 @@ type MockMessageStore struct {
 	SearchContactsFunc      func(query string) ([]store.Contact, error)
 	ListChatsFunc           func(params store.ListChatsParams) ([]store.Chat, error)
 	StoreChatFunc           func(jid, name string, lastMessageTime time.Time) error
-	StoreMessageFunc        func(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool, mediaType, filename, url, directPath, mimeType string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error
+	StoreMessageFunc        func(p store.StoreMessageParams) error
 	GetMessageForDownloadFunc func(id string, chatJID *string) (store.MessageDownloadInfo, error)
 	GetMessageMetadataFunc    func(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloadedFunc func(id, chatJID, localPath string, downloadedAt time.Time) error
@@ -49,9 +49,9 @@ func (m *MockMessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 	return nil
 }
 
-func (m *MockMessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool, mediaType, filename, url, directPath, mimeType string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
+func (m *MockMessageStore) StoreMessage(p store.StoreMessageParams) error {
 	if m.StoreMessageFunc != nil {
-		return m.StoreMessageFunc(id, chatJID, sender, content, timestamp, isFromMe, mediaType, filename, url, directPath, mimeType, mediaKey, fileSHA256, fileEncSHA256, fileLength)
+		return m.StoreMessageFunc(p)
 	}
 	return nil
 }
@@ -90,10 +90,11 @@ type MockWAClient struct {
 	AuthenticateFunc           func(ctx context.Context) error
 	ConnectFunc                func(ctx context.Context) error
 	DisconnectFunc             func()
+	GetOwnJIDFunc              func() string
 	SendMessageFunc            func(ctx context.Context, recipient, message string) (string, error)
 	SendImageMessageFunc       func(ctx context.Context, recipient, imagePath, caption string) (string, error)
 	SendVideoMessageFunc       func(ctx context.Context, recipient, videoPath, caption string) (string, error)
-	SendAudioMessageFunc       func(ctx context.Context, recipient, audioPath string) (string, error)
+	SendAudioMessageFunc       func(ctx context.Context, recipient, audioPath string, ptt bool) (string, error)
 	SendDocumentMessageFunc    func(ctx context.Context, recipient, docPath, filename string) (string, error)
 	SendTextReplyFunc          func(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error)
 	ReactToMessageFunc         func(ctx context.Context, chatJID, senderJID, messageID, emoji string) error
@@ -149,6 +150,13 @@ func (m *MockWAClient) Disconnect() {
 	}
 }
 
+func (m *MockWAClient) GetOwnJID() string {
+	if m.GetOwnJIDFunc != nil {
+		return m.GetOwnJIDFunc()
+	}
+	return "1234567890@s.whatsapp.net"
+}
+
 func (m *MockWAClient) SendMessage(ctx context.Context, recipient, message string) (string, error) {
 	if m.SendMessageFunc != nil {
 		return m.SendMessageFunc(ctx, recipient, message)
@@ -170,9 +178,9 @@ func (m *MockWAClient) SendVideoMessage(ctx context.Context, recipient, videoPat
 	return "mock-id", nil
 }
 
-func (m *MockWAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error) {
+func (m *MockWAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string, ptt bool) (string, error) {
 	if m.SendAudioMessageFunc != nil {
-		return m.SendAudioMessageFunc(ctx, recipient, audioPath)
+		return m.SendAudioMessageFunc(ctx, recipient, audioPath, ptt)
 	}
 	return "mock-id", nil
 }

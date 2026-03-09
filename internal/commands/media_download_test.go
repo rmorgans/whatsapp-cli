@@ -47,23 +47,22 @@ func TestDownloadMediaUsesMetadataAndReturnsJSON(t *testing.T) {
 	fileSHA := []byte{4, 5, 6}
 	fileEncSHA := []byte{7, 8, 9}
 
-	require.NoError(t, st.StoreMessage(
-		"msg1",
-		chatJID,
-		"1234",
-		"Sample caption",
-		now,
-		false,
-		"image",
-		"photo.jpg",
-		"https://example.com",
-		"/media/direct/path",
-		"image/jpeg",
-		mediaKey,
-		fileSHA,
-		fileEncSHA,
-		1024,
-	))
+	require.NoError(t, st.StoreMessage(store.StoreMessageParams{
+		ID:            "msg1",
+		ChatJID:       chatJID,
+		Sender:        "1234",
+		Content:       "Sample caption",
+		Timestamp:     now,
+		MediaType:     "image",
+		Filename:      "photo.jpg",
+		URL:           "https://example.com",
+		DirectPath:    "/media/direct/path",
+		MimeType:      "image/jpeg",
+		MediaKey:      mediaKey,
+		FileSHA256:    fileSHA,
+		FileEncSHA256: fileEncSHA,
+		FileLength:    1024,
+	}))
 
 	app := &App{
 		store:    st,
@@ -115,23 +114,14 @@ func TestDownloadMediaErrorsWhenMetadataMissing(t *testing.T) {
 
 	chatJID := "123@s.whatsapp.net"
 	require.NoError(t, st.StoreChat(chatJID, "Jane", time.Now()))
-	require.NoError(t, st.StoreMessage(
-		"msg2",
-		chatJID,
-		"123",
-		"No media here",
-		time.Now(),
-		false,
-		"text",
-		"",
-		"",
-		"",
-		"",
-		nil,
-		nil,
-		nil,
-		0,
-	))
+	require.NoError(t, st.StoreMessage(store.StoreMessageParams{
+		ID:        "msg2",
+		ChatJID:   chatJID,
+		Sender:    "123",
+		Content:   "No media here",
+		Timestamp: time.Now(),
+		MediaType: "text",
+	}))
 
 	app := &App{
 		store:    st,

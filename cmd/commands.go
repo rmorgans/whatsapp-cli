@@ -83,7 +83,7 @@ func registerAll(reg *r.Registry) {
 				if replyTo != "" {
 					return "", fmt.Errorf("--reply-to is only supported with text messages")
 				}
-				return app.SendAudio(ctx, to, f.String("audio")), nil
+				return app.SendAudio(ctx, to, f.String("audio"), f.Bool("ptt")), nil
 			case f.IsSet("document"):
 				if replyTo != "" {
 					return "", fmt.Errorf("--reply-to is only supported with text messages")
@@ -108,13 +108,17 @@ func registerAll(reg *r.Registry) {
 		r.StringFlag{Name: "document", Help: "document file path"},
 		r.StringFlag{Name: "caption", Help: "media caption (for image/video)"},
 		r.StringFlag{Name: "filename", Help: "document filename override"},
+		r.BoolFlag{Name: "ptt", Help: "send audio as push-to-talk voice note", Default: true},
 		r.StringFlag{Name: "reply-to", Help: "message ID to reply to"},
 	}
 	send.Rules = r.RuleSpec{
-		Requires: map[string][]string{"filename": {"document"}},
+		Requires: map[string][]string{
+			"filename": {"document"},
+			"ptt":      {"audio"},
+			"reply-to": {"message"},
+		},
 	}
 	// Custom validation: content flags are mutually exclusive, exactly one required.
-	// Preserves backward-compatible error messages for existing tests.
 	send.Validate = func(f r.FlagValues) error {
 		contentFlags := []string{"message", "image", "video", "audio", "document"}
 		var set []string
@@ -124,10 +128,14 @@ func registerAll(reg *r.Registry) {
 			}
 		}
 		if len(set) > 1 {
-			return fmt.Errorf("--message and --image are mutually exclusive")
+			return fmt.Errorf("content flags are mutually exclusive: only one of --message, --image, --video, --audio, --document may be set")
 		}
 		if len(set) == 0 {
-			return fmt.Errorf("--message or --image required")
+			return fmt.Errorf("one of --message, --image, --video, --audio, or --document is required")
+		}
+		// --caption only applies to image or video.
+		if f.IsSet("caption") && !f.IsSet("image") && !f.IsSet("video") {
+			return fmt.Errorf("--caption requires --image or --video")
 		}
 		return nil
 	}
@@ -150,7 +158,7 @@ func registerAll(reg *r.Registry) {
 	msgList.Doc = r.DocSpec{Short: "List messages in a chat"}
 	msgList.Exec = r.Bounded(0)
 	msgList.Flags = []r.Flag{
-		r.StringFlag{Name: "chat", Help: "chat JID to filter by"},
+		r.StringFlag{Name: "chat", Help: "chat JID to filter by (omit to list across all chats)"},
 		r.IntFlag{Name: "limit", Help: "maximum messages to return", Default: 20},
 		r.IntFlag{Name: "page", Help: "page number"},
 	}

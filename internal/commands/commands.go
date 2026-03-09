@@ -137,6 +137,15 @@ func recipientToJID(recipient string) string {
 	return recipient + "@s.whatsapp.net"
 }
 
+// ownSender returns the device's JID for use as the sender field in stored
+// messages, falling back to "me" if the JID is unavailable.
+func (a *App) ownSender() string {
+	if jid := a.client.GetOwnJID(); jid != "" {
+		return jid
+	}
+	return "me"
+}
+
 func (a *App) SendMessage(ctx context.Context, recipient, message string) string {
 	if err := a.client.Connect(ctx); err != nil {
 		return output.Error(err)
@@ -158,11 +167,14 @@ func (a *App) SendMessage(ctx context.Context, recipient, message string) string
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", message, timestamp, true,
-		"", "", "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   message,
+		Timestamp: timestamp,
+		IsFromMe:  true,
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -179,8 +191,10 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 		return output.Error(err)
 	}
 
-	// Look up the original message to get the sender JID for ContextInfo.
-	meta, err := a.store.GetMessageMetadata(replyToID, nil)
+	// Look up the original message scoped to the destination chat so we don't
+	// accidentally quote a message from a different conversation.
+	chatJID := recipientToJID(recipient)
+	meta, err := a.store.GetMessageMetadata(replyToID, &chatJID)
 	if err != nil {
 		return output.Error(fmt.Errorf("looking up reply-to message %s: %w", replyToID, err))
 	}
@@ -194,7 +208,6 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 	}
 
 	timestamp := time.Now()
-	chatJID := recipientToJID(recipient)
 
 	chatName := a.client.ResolveChatName(ctx, chatJID, nil)
 	if chatName == "" {
@@ -204,11 +217,14 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", message, timestamp, true,
-		"", "", "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   message,
+		Timestamp: timestamp,
+		IsFromMe:  true,
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -234,12 +250,7 @@ func (a *App) ReactToMessage(ctx context.Context, messageID, emoji string, chatJ
 		return output.Error(err)
 	}
 
-	senderJID := meta.Sender
-	if !strings.Contains(senderJID, "@") {
-		senderJID = senderJID + "@s.whatsapp.net"
-	}
-
-	if err := a.client.ReactToMessage(ctx, meta.ChatJID, senderJID, messageID, emoji); err != nil {
+	if err := a.client.ReactToMessage(ctx, meta.ChatJID, recipientToJID(meta.Sender), messageID, emoji); err != nil {
 		return output.Error(err)
 	}
 
@@ -269,12 +280,7 @@ func (a *App) DeleteMessage(ctx context.Context, messageID string, chatJID *stri
 		return output.Error(err)
 	}
 
-	senderJID := meta.Sender
-	if !strings.Contains(senderJID, "@") {
-		senderJID = senderJID + "@s.whatsapp.net"
-	}
-
-	if err := a.client.RevokeMessage(ctx, meta.ChatJID, senderJID, messageID); err != nil {
+	if err := a.client.RevokeMessage(ctx, meta.ChatJID, recipientToJID(meta.Sender), messageID); err != nil {
 		return output.Error(err)
 	}
 
@@ -323,12 +329,7 @@ func (a *App) MarkMessageRead(ctx context.Context, messageID string, chatJID *st
 		return output.Error(err)
 	}
 
-	senderJID := meta.Sender
-	if !strings.Contains(senderJID, "@") {
-		senderJID = senderJID + "@s.whatsapp.net"
-	}
-
-	if err := a.client.MarkRead(ctx, []string{messageID}, meta.Timestamp, meta.ChatJID, senderJID); err != nil {
+	if err := a.client.MarkRead(ctx, []string{messageID}, meta.Timestamp, meta.ChatJID, recipientToJID(meta.Sender)); err != nil {
 		return output.Error(err)
 	}
 
@@ -365,11 +366,16 @@ func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption strin
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", content, timestamp, true,
-		"image", filepath.Base(imagePath), "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   content,
+		Timestamp: timestamp,
+		IsFromMe:  true,
+		MediaType: "image",
+		Filename:  filepath.Base(imagePath),
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -408,11 +414,16 @@ func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption strin
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", content, timestamp, true,
-		"video", filepath.Base(videoPath), "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   content,
+		Timestamp: timestamp,
+		IsFromMe:  true,
+		MediaType: "video",
+		Filename:  filepath.Base(videoPath),
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -425,12 +436,12 @@ func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption strin
 	})
 }
 
-func (a *App) SendAudio(ctx context.Context, recipient, audioPath string) string {
+func (a *App) SendAudio(ctx context.Context, recipient, audioPath string, ptt bool) string {
 	if err := a.client.Connect(ctx); err != nil {
 		return output.Error(err)
 	}
 
-	msgID, err := a.client.SendAudioMessage(ctx, recipient, audioPath)
+	msgID, err := a.client.SendAudioMessage(ctx, recipient, audioPath, ptt)
 	if err != nil {
 		return output.Error(err)
 	}
@@ -446,11 +457,16 @@ func (a *App) SendAudio(ctx context.Context, recipient, audioPath string) string
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", "[Audio]", timestamp, true,
-		"audio", filepath.Base(audioPath), "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   "[Audio]",
+		Timestamp: timestamp,
+		IsFromMe:  true,
+		MediaType: "audio",
+		Filename:  filepath.Base(audioPath),
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -489,11 +505,16 @@ func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename str
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
 		return output.Error(fmt.Errorf("storing chat: %w", err))
 	}
-	if err := a.store.StoreMessage(
-		msgID, chatJID, "me", displayName, timestamp, true,
-		"document", displayName, "", "", "",
-		nil, nil, nil, 0,
-	); err != nil {
+	if err := a.store.StoreMessage(store.StoreMessageParams{
+		ID:        msgID,
+		ChatJID:   chatJID,
+		Sender:    a.ownSender(),
+		Content:   displayName,
+		Timestamp: timestamp,
+		IsFromMe:  true,
+		MediaType: "document",
+		Filename:  displayName,
+	}); err != nil {
 		return output.Error(fmt.Errorf("storing message: %w", err))
 	}
 
@@ -754,16 +775,18 @@ type mediaJob struct {
 }
 
 type mediaDownloadWorker struct {
-	app     *App
-	workers int
-	jobs    chan mediaJob
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	app       *App
+	workers   int
+	jobs      chan mediaJob
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	startOnce sync.Once
 
 	// Error tracking
 	mu             sync.Mutex
 	expiredCount   int // 403/404/410 errors (media expired/deleted)
+	droppedCount   int // jobs dropped due to full queue
 	otherErrors    int
 	otherErrorMsgs []string // Keep first few for debugging
 }
@@ -783,10 +806,17 @@ func (w *mediaDownloadWorker) Start(ctx context.Context) {
 	if w == nil {
 		return
 	}
-	w.ctx, w.cancel = context.WithCancel(ctx)
-	for i := 0; i < w.workers; i++ {
-		w.wg.Add(1)
-		go w.run()
+	called := false
+	w.startOnce.Do(func() {
+		called = true
+		w.ctx, w.cancel = context.WithCancel(ctx)
+		for i := 0; i < w.workers; i++ {
+			w.wg.Add(1)
+			go w.run()
+		}
+	})
+	if !called {
+		panic("mediaDownloadWorker: Start called twice")
 	}
 }
 
@@ -831,12 +861,16 @@ func (w *mediaDownloadWorker) PrintSummary() {
 	}
 	w.mu.Lock()
 	expiredCount := w.expiredCount
+	droppedCount := w.droppedCount
 	otherErrors := w.otherErrors
 	otherErrorMsgs := w.otherErrorMsgs
 	w.mu.Unlock()
 
 	if expiredCount > 0 {
 		fmt.Fprintf(os.Stderr, "⚠️  Skipped %d expired/deleted media files (normal for old messages)\n", expiredCount)
+	}
+	if droppedCount > 0 {
+		fmt.Fprintf(os.Stderr, "⚠️  Dropped %d media downloads (queue full)\n", droppedCount)
 	}
 	if otherErrors > 0 {
 		fmt.Fprintf(os.Stderr, "⚠️  %d media downloads failed:\n", otherErrors)
@@ -857,12 +891,9 @@ func (w *mediaDownloadWorker) Enqueue(job mediaJob) {
 	case w.jobs <- job:
 	case <-w.ctx.Done():
 	default:
-		go func() {
-			select {
-			case w.jobs <- job:
-			case <-w.ctx.Done():
-			}
-		}()
+		w.mu.Lock()
+		w.droppedCount++
+		w.mu.Unlock()
 	}
 }
 
@@ -934,24 +965,29 @@ func (a *App) Sync(ctx context.Context) string {
 				chatName = chatJID
 			}
 
-			// Store chat
-			a.store.StoreChat(chatJID, chatName, msgTime)
+			if err := a.store.StoreChat(chatJID, chatName, msgTime); err != nil {
+				fmt.Fprintf(os.Stderr, "\n⚠ failed to store chat %s: %v\n", chatJID, err)
+			}
 
-			// Store message
-			a.store.StoreMessage(
-				id,
-				chatJID,
-				sender,
-				content,
-				msgTime,
-				isFromMe,
-				mediaType,
-				filename,
-				url,
-				directPath,
-				mimeType,
-				mediaKey, fileSHA256, fileEncSHA256, fileLength,
-			)
+			if err := a.store.StoreMessage(store.StoreMessageParams{
+				ID:            id,
+				ChatJID:       chatJID,
+				Sender:        sender,
+				Content:       content,
+				Timestamp:     msgTime,
+				IsFromMe:      isFromMe,
+				MediaType:     mediaType,
+				Filename:      filename,
+				URL:           url,
+				DirectPath:    directPath,
+				MimeType:      mimeType,
+				MediaKey:      mediaKey,
+				FileSHA256:    fileSHA256,
+				FileEncSHA256: fileEncSHA256,
+				FileLength:    fileLength,
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "\n⚠ failed to store message %s: %v\n", id, err)
+			}
 
 			if directPath != "" && len(mediaKey) > 0 {
 				worker.Enqueue(mediaJob{messageID: id, chatJID: chatJID})
@@ -1052,24 +1088,29 @@ func (a *App) Sync(ctx context.Context) string {
 						fileLength = doc.GetFileLength()
 					}
 
-					// Store chat
-					a.store.StoreChat(chatJID, chatName, msgTimestamp)
+					if err := a.store.StoreChat(chatJID, chatName, msgTimestamp); err != nil {
+						fmt.Fprintf(os.Stderr, "\n⚠ failed to store chat %s: %v\n", chatJID, err)
+					}
 
-					// Store message
-					a.store.StoreMessage(
-						msgID,
-						chatJID,
-						sender,
-						content,
-						msgTimestamp,
-						isFromMe,
-						mediaType,
-						filename,
-						url,
-						directPath,
-						mimeType,
-						mediaKey, fileSHA256, fileEncSHA256, fileLength,
-					)
+					if err := a.store.StoreMessage(store.StoreMessageParams{
+						ID:            msgID,
+						ChatJID:       chatJID,
+						Sender:        sender,
+						Content:       content,
+						Timestamp:     msgTimestamp,
+						IsFromMe:      isFromMe,
+						MediaType:     mediaType,
+						Filename:      filename,
+						URL:           url,
+						DirectPath:    directPath,
+						MimeType:      mimeType,
+						MediaKey:      mediaKey,
+						FileSHA256:    fileSHA256,
+						FileEncSHA256: fileEncSHA256,
+						FileLength:    fileLength,
+					}); err != nil {
+						fmt.Fprintf(os.Stderr, "\n⚠ failed to store message %s: %v\n", msgID, err)
+					}
 
 					if directPath != "" && len(mediaKey) > 0 {
 						worker.Enqueue(mediaJob{messageID: msgID, chatJID: chatJID})

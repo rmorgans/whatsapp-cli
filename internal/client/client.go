@@ -92,6 +92,14 @@ func (w *WAClient) IsAuthenticated() bool {
 	return w.client.Store.ID != nil
 }
 
+// GetOwnJID returns the JID of the authenticated device, or empty string if not authenticated.
+func (w *WAClient) GetOwnJID() string {
+	if w.client.Store.ID == nil {
+		return ""
+	}
+	return w.client.Store.ID.ToNonAD().String()
+}
+
 func (w *WAClient) Authenticate(ctx context.Context) error {
 	if w.IsAuthenticated() {
 		return nil
@@ -261,7 +269,7 @@ func (w *WAClient) SendVideoMessage(ctx context.Context, recipient, videoPath, c
 	return sendResp.ID, nil
 }
 
-func (w *WAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error) {
+func (w *WAClient) SendAudioMessage(ctx context.Context, recipient, audioPath string, ptt bool) (string, error) {
 	if !w.client.IsConnected() {
 		return "", fmt.Errorf("not connected to WhatsApp")
 	}
@@ -283,7 +291,6 @@ func (w *WAClient) SendAudioMessage(ctx context.Context, recipient, audioPath st
 		return "", fmt.Errorf("uploading audio: %w", err)
 	}
 
-	ptt := true
 	sendResp, err := w.client.SendMessage(ctx, recipientJID, &waProto.Message{
 		AudioMessage: &waProto.AudioMessage{
 			Mimetype:      proto.String(mimeType),

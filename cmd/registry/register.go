@@ -77,6 +77,9 @@ func newRootCmd(r *Registry) *cobra.Command {
 
 // RegisterParent registers a non-leaf parent command.
 func (r *Registry) RegisterParent(spec ParentSpec) {
+	if spec.Path.Name() == "" {
+		panic("registry.RegisterParent: path must not be zero-value (empty name)")
+	}
 	parent := r.ensureParent(spec.Path.Parents())
 	cmd := &cobra.Command{
 		Use:    spec.Path.Name(),
@@ -133,6 +136,10 @@ func (r *Registry) Register(spec LeafSpec) {
 // ---------------------------------------------------------------------------
 
 func (r *Registry) validateRegistration(spec LeafSpec) {
+	if spec.Run == nil {
+		panic("registry.Register: command " + spec.ID + " has nil Run")
+	}
+
 	pathKey := strings.Join(spec.Path.Segments(), " ")
 
 	if r.ids[spec.ID] {
@@ -294,6 +301,12 @@ func (r *Registry) buildRunE(spec LeafSpec) func(*cobra.Command, []string) error
 
 		// Runtime rule validation — returns error to cobra (exit 2).
 		if err := validateRules(cmd, spec.Rules); err != nil {
+			return err
+		}
+
+		// Reject empty strings for required StringFlags (cobra only
+		// checks presence, not emptiness).
+		if err := validateRequiredNonEmpty(fv, spec.Flags); err != nil {
 			return err
 		}
 
@@ -495,6 +508,44 @@ func validateRules(cmd *cobra.Command, rules RuleSpec) error {
 		}
 	}
 
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// validateRequiredNonEmpty
+// ---------------------------------------------------------------------------
+
+// validateRequiredNonEmpty rejects empty strings for required StringFlags and
+// empty slices for required StringSliceFlags. Cobra's MarkFlagRequired only
+// checks that the flag was provided on the command line — it does not reject
+// --flag="" or --flag=. This check turns those into usage errors (exit 2).
+func validateRequiredNonEmpty(fv FlagValues, flags []Flag) error {
+	for _, f := range flags {
+		if !f.isRequired() {
+			continue
+		}
+		switch fl := f.(type) {
+		case StringFlag:
+			if strings.TrimSpace(fv.String(fl.Name)) == "" {
+				return fmt.Errorf("flag --%s requires a non-empty value", fl.Name)
+			}
+		case StringSliceFlag:
+			vals := fv.StringSlice(fl.Name)
+			if len(vals) == 0 {
+				return fmt.Errorf("flag --%s requires at least one value", fl.Name)
+			}
+			allEmpty := true
+			for _, v := range vals {
+				if strings.TrimSpace(v) != "" {
+					allEmpty = false
+					break
+				}
+			}
+			if allEmpty {
+				return fmt.Errorf("flag --%s requires non-empty values", fl.Name)
+			}
+		}
+	}
 	return nil
 }
 

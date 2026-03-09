@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/vicentereig/whatsapp-cli/internal/output"
+	"github.com/vicentereig/whatsapp-cli/internal/types"
 )
 
 func (a *App) GroupsList(ctx context.Context) string {
@@ -15,6 +16,9 @@ func (a *App) GroupsList(ctx context.Context) string {
 	groups, err := a.client.GetJoinedGroups(ctx)
 	if err != nil {
 		return output.Error(err)
+	}
+	if groups == nil {
+		groups = []types.GroupInfo{}
 	}
 
 	return output.Success(groups)

@@ -62,6 +62,17 @@ type MessageDownloadInfo struct {
 	IsFromMe      bool
 }
 
+// StoreMessageParams holds all fields for persisting a message.
+type StoreMessageParams struct {
+	ID, ChatJID, Sender, Content       string
+	Timestamp                          time.Time
+	IsFromMe                           bool
+	MediaType, Filename                string
+	URL, DirectPath, MimeType          string
+	MediaKey, FileSHA256, FileEncSHA256 []byte
+	FileLength                         uint64
+}
+
 type ListMessagesParams struct {
 	After   *time.Time
 	Before  *time.Time
@@ -200,11 +211,10 @@ func (s *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) er
 	return err
 }
 
-func (s *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
-	mediaType, filename, url, directPath, mimeType string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
+func (s *MessageStore) StoreMessage(p StoreMessageParams) error {
 	intFileLength := int64(0)
-	if fileLength > 0 {
-		intFileLength = int64(fileLength)
+	if p.FileLength > 0 {
+		intFileLength = int64(p.FileLength)
 	}
 
 	_, err := s.db.Exec(
@@ -225,7 +235,9 @@ func (s *MessageStore) StoreMessage(id, chatJID, sender, content string, timesta
 			file_sha256 = CASE WHEN excluded.file_sha256 IS NOT NULL AND length(excluded.file_sha256) > 0 THEN excluded.file_sha256 ELSE messages.file_sha256 END,
 			file_enc_sha256 = CASE WHEN excluded.file_enc_sha256 IS NOT NULL AND length(excluded.file_enc_sha256) > 0 THEN excluded.file_enc_sha256 ELSE messages.file_enc_sha256 END,
 			file_length = CASE WHEN excluded.file_length > 0 THEN excluded.file_length ELSE messages.file_length END`,
-		id, chatJID, sender, content, timestamp, isFromMe, mediaType, filename, url, directPath, mimeType, mediaKey, fileSHA256, fileEncSHA256, intFileLength,
+		p.ID, p.ChatJID, p.Sender, p.Content, p.Timestamp, p.IsFromMe,
+		p.MediaType, p.Filename, p.URL, p.DirectPath, p.MimeType,
+		p.MediaKey, p.FileSHA256, p.FileEncSHA256, intFileLength,
 	)
 	return err
 }
@@ -265,7 +277,7 @@ func (s *MessageStore) ListMessages(params ListMessagesParams) ([]Message, error
 	}
 	defer rows.Close()
 
-	var messages []Message
+	messages := []Message{}
 	for rows.Next() {
 		var m Message
 		err := rows.Scan(&m.ID, &m.ChatJID, &m.ChatName, &m.Sender, &m.Content, &m.Timestamp, &m.IsFromMe, &m.MediaType)
@@ -290,7 +302,7 @@ func (s *MessageStore) SearchContacts(query string) ([]Contact, error) {
 	}
 	defer rows.Close()
 
-	var contacts []Contact
+	contacts := []Contact{}
 	for rows.Next() {
 		var c Contact
 		var jid, name string
@@ -483,7 +495,7 @@ func (s *MessageStore) ListChats(params ListChatsParams) ([]Chat, error) {
 	}
 	defer rows.Close()
 
-	var chats []Chat
+	chats := []Chat{}
 	for rows.Next() {
 		var c Chat
 		if err := rows.Scan(&c.JID, &c.Name, &c.LastMessageTime); err != nil {

@@ -27,9 +27,7 @@ type MessageStore interface {
 	SearchContacts(query string) ([]store.Contact, error)
 	ListChats(params store.ListChatsParams) ([]store.Chat, error)
 	StoreChat(jid, name string, lastMessageTime time.Time) error
-	StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
-		mediaType, filename, url, directPath, mimeType string,
-		mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error
+	StoreMessage(p store.StoreMessageParams) error
 	GetMessageForDownload(id string, chatJID *string) (store.MessageDownloadInfo, error)
 	GetMessageMetadata(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error
@@ -43,10 +41,11 @@ type WAClient interface {
 	Authenticate(ctx context.Context) error
 	Connect(ctx context.Context) error
 	Disconnect()
+	GetOwnJID() string
 	SendMessage(ctx context.Context, recipient, message string) (string, error)
 	SendImageMessage(ctx context.Context, recipient, imagePath, caption string) (string, error)
 	SendVideoMessage(ctx context.Context, recipient, videoPath, caption string) (string, error)
-	SendAudioMessage(ctx context.Context, recipient, audioPath string) (string, error)
+	SendAudioMessage(ctx context.Context, recipient, audioPath string, ptt bool) (string, error)
 	SendDocumentMessage(ctx context.Context, recipient, docPath, filename string) (string, error)
 	SendTextReply(ctx context.Context, recipient, message, replyToID, replyToSender string) (string, error)
 	ResolveChatName(ctx context.Context, jid string, evt interface{}) string

@@ -49,8 +49,9 @@ A standalone command-line interface for WhatsApp built on the WhatsApp Web multi
 | **JSON Output** | All commands return structured JSON for easy parsing |
 | **Persistent Sessions** | Authenticate once via QR code, auto-reconnect for ~20 days |
 | **Local Storage** | SQLite database, no cloud dependencies |
-| **Full Messaging** | Send, receive, search messages; manage contacts & chats |
-| **Group Support** | Send/receive messages in group chats |
+| **Full Messaging** | Send text, images, video, audio, documents; reply, react, edit, delete messages |
+| **Group Management** | Create, join, leave groups; manage members, names, descriptions, photos |
+| **Contact Operations** | Search, block/unblock, check WhatsApp registration |
 | **TDD Implementation** | 100% test coverage, production-ready |
 
 ### System Requirements
@@ -566,12 +567,15 @@ whatsapp-cli chats list | jq '.data[] | select(.jid | endswith("@g.us"))'
 
 ### Command: `send`
 
-Send a text message or image to an individual or group.
+Send a text message, image, video, audio, or document to an individual or group.
 
 **Syntax:**
 ```bash
-whatsapp-cli send --to RECIPIENT --message TEXT
+whatsapp-cli send --to RECIPIENT --message TEXT [--reply-to MSG_ID]
 whatsapp-cli send --to RECIPIENT --image PATH [--caption TEXT]
+whatsapp-cli send --to RECIPIENT --video PATH [--caption TEXT]
+whatsapp-cli send --to RECIPIENT --audio PATH [--ptt=false]
+whatsapp-cli send --to RECIPIENT --document PATH [--filename NAME]
 ```
 
 **Parameters:**
@@ -581,9 +585,15 @@ whatsapp-cli send --to RECIPIENT --image PATH [--caption TEXT]
 | `--to` | string | Yes | - | Phone number or JID |
 | `--message` | string | No* | - | Message text content |
 | `--image` | string | No* | - | Image file path to upload and send |
-| `--caption` | string | No | - | Caption for image messages |
+| `--video` | string | No* | - | Video file path to upload and send |
+| `--audio` | string | No* | - | Audio file path to upload and send |
+| `--document` | string | No* | - | Document file path to upload and send |
+| `--caption` | string | No | - | Caption for image/video messages |
+| `--filename` | string | No | - | Document filename override (requires `--document`) |
+| `--ptt` | bool | No | true | Send audio as push-to-talk voice note (requires `--audio`) |
+| `--reply-to` | string | No | - | Message ID to reply to (text messages only) |
 
-*One of `--message` or `--image` is required. They are mutually exclusive.
+*Exactly one of `--message`, `--image`, `--video`, `--audio`, or `--document` is required. They are mutually exclusive.
 
 **Recipient Formats:**
 
@@ -608,25 +618,29 @@ whatsapp-cli send --to RECIPIENT --image PATH [--caption TEXT]
 
 **Examples:**
 ```bash
-# Send to individual (phone number)
+# Send text message
 whatsapp-cli send --to 1234567890 --message "Hello from CLI!"
-
-# Send to individual (full JID)
-whatsapp-cli send --to 1234567890@s.whatsapp.net --message "Hi there!"
 
 # Send to group (requires JID)
 whatsapp-cli send --to 123456789@g.us --message "Hello everyone!"
 
-# Send with special characters (use quotes)
-whatsapp-cli send --to 1234567890 --message "It's working! 🎉"
+# Reply to a message
+whatsapp-cli send --to 1234567890 --message "Got it" --reply-to ABC123
 
-# Multi-line messages
-whatsapp-cli send --to 1234567890 --message "Line 1
-Line 2
-Line 3"
+# Send image with caption
+whatsapp-cli send --to 1234567890 --image photo.jpg --caption "Check this out"
 
-# Send result of command
-whatsapp-cli send --to 1234567890 --message "Server status: $(uptime)"
+# Send video
+whatsapp-cli send --to 1234567890 --video clip.mp4
+
+# Send audio as voice note (default)
+whatsapp-cli send --to 1234567890 --audio recording.ogg
+
+# Send audio as generic audio file (not voice note)
+whatsapp-cli send --to 1234567890 --audio song.mp3 --ptt=false
+
+# Send document with custom filename
+whatsapp-cli send --to 1234567890 --document report.pdf --filename "Q4 Report.pdf"
 ```
 
 **Behavior:**
@@ -634,11 +648,243 @@ whatsapp-cli send --to 1234567890 --message "Server status: $(uptime)"
 - Message stored locally in database
 - Returns immediately after sending (does not wait for delivery)
 - Supports Unicode (emojis, international characters)
+- `--reply-to` is only supported with `--message` (text), not media
 
 **Limitations:**
 - No delivery/read receipt information returned
 - Maximum message length: WhatsApp's standard limit (~65,536 characters)
-- Image sending supports common formats (JPEG, PNG, GIF, WebP); video/audio/document sending not yet supported
+
+---
+
+### Command: `messages react`
+
+React to a message with an emoji.
+
+**Syntax:**
+```bash
+whatsapp-cli messages react --message-id ID --emoji EMOJI [--chat JID]
+```
+
+**Parameters:**
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--message-id` | string | Yes | Message to react to |
+| `--emoji` | string | Yes | Reaction emoji (empty string to remove reaction) |
+| `--chat` | string | No | Chat JID (required if message ID is ambiguous) |
+
+---
+
+### Command: `messages delete`
+
+Delete (revoke) a message.
+
+**Syntax:**
+```bash
+whatsapp-cli messages delete --message-id ID [--chat JID]
+```
+
+**Parameters:**
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--message-id` | string | Yes | Message to delete |
+| `--chat` | string | No | Chat JID (required if message ID is ambiguous) |
+
+---
+
+### Command: `messages edit`
+
+Edit a previously sent message.
+
+**Syntax:**
+```bash
+whatsapp-cli messages edit --message-id ID --text TEXT [--chat JID]
+```
+
+**Parameters:**
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--message-id` | string | Yes | Message to edit |
+| `--text` | string | Yes | New message text |
+| `--chat` | string | No | Chat JID (required if message ID is ambiguous) |
+
+---
+
+### Command: `messages mark-read`
+
+Mark a message as read.
+
+**Syntax:**
+```bash
+whatsapp-cli messages mark-read --message-id ID [--chat JID]
+```
+
+---
+
+### Command: `contacts block`
+
+Block a contact.
+
+**Syntax:**
+```bash
+whatsapp-cli contacts block --jid JID
+```
+
+---
+
+### Command: `contacts unblock`
+
+Unblock a contact.
+
+**Syntax:**
+```bash
+whatsapp-cli contacts unblock --jid JID
+```
+
+---
+
+### Command: `contacts list-blocked`
+
+List all blocked contacts.
+
+**Syntax:**
+```bash
+whatsapp-cli contacts list-blocked
+```
+
+---
+
+### Command: `contacts check`
+
+Check if phone numbers are registered on WhatsApp.
+
+**Syntax:**
+```bash
+whatsapp-cli contacts check --phone +1234567890 [--phone +0987654321]
+```
+
+---
+
+### Command: `groups list`
+
+List all groups you are a member of.
+
+**Syntax:**
+```bash
+whatsapp-cli groups list
+```
+
+---
+
+### Command: `groups info`
+
+Get detailed information about a group.
+
+**Syntax:**
+```bash
+whatsapp-cli groups info --jid GROUP_JID
+```
+
+---
+
+### Command: `groups create`
+
+Create a new WhatsApp group.
+
+**Syntax:**
+```bash
+whatsapp-cli groups create --name "Group Name" [--members JID1,JID2]
+```
+
+---
+
+### Command: `groups invite-link`
+
+Get or reset a group's invite link.
+
+**Syntax:**
+```bash
+whatsapp-cli groups invite-link --jid GROUP_JID [--reset]
+```
+
+---
+
+### Command: `groups join`
+
+Join a group via invite link.
+
+**Syntax:**
+```bash
+whatsapp-cli groups join --link "https://chat.whatsapp.com/..."
+```
+
+---
+
+### Command: `groups leave`
+
+Leave a group.
+
+**Syntax:**
+```bash
+whatsapp-cli groups leave --jid GROUP_JID
+```
+
+---
+
+### Command: `groups add-members`
+
+Add members to a group.
+
+**Syntax:**
+```bash
+whatsapp-cli groups add-members --jid GROUP_JID --members JID1,JID2
+```
+
+---
+
+### Command: `groups remove-members`
+
+Remove members from a group.
+
+**Syntax:**
+```bash
+whatsapp-cli groups remove-members --jid GROUP_JID --members JID1,JID2
+```
+
+---
+
+### Command: `groups set-name`
+
+Set a group's name.
+
+**Syntax:**
+```bash
+whatsapp-cli groups set-name --jid GROUP_JID --name "New Name"
+```
+
+---
+
+### Command: `groups set-description`
+
+Set a group's description.
+
+**Syntax:**
+```bash
+whatsapp-cli groups set-description --jid GROUP_JID --description "New description"
+```
+
+---
+
+### Command: `groups set-photo`
+
+Set a group's photo (JPEG).
+
+**Syntax:**
+```bash
+whatsapp-cli groups set-photo --jid GROUP_JID --image photo.jpg
+```
 
 ---
 
@@ -1573,8 +1819,10 @@ Follow TDD (Test-Driven Development):
 // store_test.go
 func TestStoreMessage(t *testing.T) {
     store := setupTestDB(t)
-    err := store.StoreMessage("id1", "chat@s.whatsapp.net", "sender",
-        "Hello", time.Now(), false, "", "", "", nil, nil, nil, 0)
+    err := store.StoreMessage(StoreMessageParams{
+        ID: "id1", ChatJID: "chat@s.whatsapp.net", Sender: "sender",
+        Content: "Hello", Timestamp: time.Now(),
+    })
     assert.NoError(t, err)
 }
 ```

@@ -77,7 +77,7 @@ func TestStoreMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Then store a message
-	err = store.StoreMessage("msg1", chatJID, "1234", "Hello", time.Now(), false, "", "", "", "", "", nil, nil, nil, 0)
+	err = store.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chatJID, Sender: "1234", Content: "Hello", Timestamp: time.Now()})
 	assert.NoError(t, err)
 }
 
@@ -88,8 +88,8 @@ func TestListMessages(t *testing.T) {
 	// Setup test data
 	store.StoreChat(chatJID, "John Doe", time.Now())
 	now := time.Now()
-	store.StoreMessage("msg1", chatJID, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0)
-	store.StoreMessage("msg2", chatJID, "1234", "World", now.Add(time.Second), false, "", "", "", "", "", nil, nil, nil, 0)
+	store.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chatJID, Sender: "1234", Content: "Hello", Timestamp: now})
+	store.StoreMessage(StoreMessageParams{ID: "msg2", ChatJID: chatJID, Sender: "1234", Content: "World", Timestamp: now.Add(time.Second)})
 
 	messages, err := store.ListMessages(ListMessagesParams{ChatJID: &chatJID, Limit: 10})
 	require.NoError(t, err)
@@ -109,23 +109,22 @@ func TestGetMessageForDownload(t *testing.T) {
 	fileSHA := []byte{4, 5, 6}
 	fileEncSHA := []byte{7, 8, 9}
 
-	err := store.StoreMessage(
-		"msg1",
-		chatJID,
-		"1234",
-		"Sample caption",
-		now,
-		false,
-		"image",
-		"photo.jpg",
-		"https://example.com/image",
-		"/media/direct/path",
-		"image/jpeg",
-		mediaKey,
-		fileSHA,
-		fileEncSHA,
-		1024,
-	)
+	err := store.StoreMessage(StoreMessageParams{
+		ID:            "msg1",
+		ChatJID:       chatJID,
+		Sender:        "1234",
+		Content:       "Sample caption",
+		Timestamp:     now,
+		MediaType:     "image",
+		Filename:      "photo.jpg",
+		URL:           "https://example.com/image",
+		DirectPath:    "/media/direct/path",
+		MimeType:      "image/jpeg",
+		MediaKey:      mediaKey,
+		FileSHA256:    fileSHA,
+		FileEncSHA256: fileEncSHA,
+		FileLength:    1024,
+	})
 	require.NoError(t, err)
 
 	info, err := store.GetMessageForDownload("msg1", nil)
@@ -175,7 +174,7 @@ func TestGetMessageMetadata(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	require.NoError(t, s.StoreChat(chatJID, "John Doe", now))
-	require.NoError(t, s.StoreMessage("msg1", chatJID, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chatJID, Sender: "1234", Content: "Hello", Timestamp: now}))
 
 	msg, err := s.GetMessageMetadata("msg1", nil)
 	require.NoError(t, err)
@@ -194,7 +193,7 @@ func TestGetMessageMetadataWithChatJID(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	require.NoError(t, s.StoreChat(chatJID, "John Doe", now))
-	require.NoError(t, s.StoreMessage("msg1", chatJID, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chatJID, Sender: "1234", Content: "Hello", Timestamp: now}))
 
 	msg, err := s.GetMessageMetadata("msg1", &chatJID)
 	require.NoError(t, err)
@@ -217,8 +216,8 @@ func TestGetMessageMetadataMultipleChatsNoFilter(t *testing.T) {
 
 	require.NoError(t, s.StoreChat(chat1, "John", now))
 	require.NoError(t, s.StoreChat(chat2, "Jane", now))
-	require.NoError(t, s.StoreMessage("msg1", chat1, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
-	require.NoError(t, s.StoreMessage("msg1", chat2, "5678", "Hi", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chat1, Sender: "1234", Content: "Hello", Timestamp: now}))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chat2, Sender: "5678", Content: "Hi", Timestamp: now}))
 
 	_, err := s.GetMessageMetadata("msg1", nil)
 	require.Error(t, err)
@@ -233,8 +232,8 @@ func TestGetMessageMetadataMultipleChatsWithFilter(t *testing.T) {
 
 	require.NoError(t, s.StoreChat(chat1, "John", now))
 	require.NoError(t, s.StoreChat(chat2, "Jane", now))
-	require.NoError(t, s.StoreMessage("msg1", chat1, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
-	require.NoError(t, s.StoreMessage("msg1", chat2, "5678", "Hi", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chat1, Sender: "1234", Content: "Hello", Timestamp: now}))
+	require.NoError(t, s.StoreMessage(StoreMessageParams{ID: "msg1", ChatJID: chat2, Sender: "5678", Content: "Hi", Timestamp: now}))
 
 	msg, err := s.GetMessageMetadata("msg1", &chat2)
 	require.NoError(t, err)

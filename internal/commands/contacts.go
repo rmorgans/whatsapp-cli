@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/vicentereig/whatsapp-cli/internal/output"
+	"github.com/vicentereig/whatsapp-cli/internal/types"
 )
 
 func (a *App) BlockContact(ctx context.Context, jid string) string {
@@ -45,6 +46,9 @@ func (a *App) ListBlocked(ctx context.Context) string {
 	if err != nil {
 		return output.Error(err)
 	}
+	if jids == nil {
+		jids = []string{}
+	}
 
 	return output.Success(jids)
 }
@@ -57,6 +61,9 @@ func (a *App) CheckOnWhatsApp(ctx context.Context, phones []string) string {
 	results, err := a.client.IsOnWhatsApp(ctx, phones)
 	if err != nil {
 		return output.Error(err)
+	}
+	if results == nil {
+		results = []types.IsOnWhatsAppResponse{}
 	}
 
 	return output.Success(results)
