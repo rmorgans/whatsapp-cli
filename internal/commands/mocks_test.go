@@ -16,6 +16,7 @@ type MockMessageStore struct {
 	StoreChatFunc           func(jid, name string, lastMessageTime time.Time) error
 	StoreMessageFunc        func(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool, mediaType, filename, url, directPath, mimeType string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error
 	GetMessageForDownloadFunc func(id string, chatJID *string) (store.MessageDownloadInfo, error)
+	GetMessageMetadataFunc    func(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloadedFunc func(id, chatJID, localPath string, downloadedAt time.Time) error
 	CloseFunc               func() error
 }
@@ -60,6 +61,13 @@ func (m *MockMessageStore) GetMessageForDownload(id string, chatJID *string) (st
 		return m.GetMessageForDownloadFunc(id, chatJID)
 	}
 	return store.MessageDownloadInfo{}, nil
+}
+
+func (m *MockMessageStore) GetMessageMetadata(id string, chatJID *string) (store.Message, error) {
+	if m.GetMessageMetadataFunc != nil {
+		return m.GetMessageMetadataFunc(id, chatJID)
+	}
+	return store.Message{}, nil
 }
 
 func (m *MockMessageStore) MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error {

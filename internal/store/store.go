@@ -407,6 +407,54 @@ func (s *MessageStore) GetMessageForDownload(id string, chatJID *string) (Messag
 	return infos[0], nil
 }
 
+// GetMessageMetadata returns the metadata fields needed for message operations
+// (reply, react, delete, edit, mark-read). It does NOT return media fields.
+// If chatJID is nil and multiple messages match the ID, returns an error.
+func (s *MessageStore) GetMessageMetadata(id string, chatJID *string) (Message, error) {
+	query := `
+		SELECT m.id, m.chat_jid, c.name, m.sender, m.content, m.timestamp, m.is_from_me, m.media_type
+		FROM messages m
+		LEFT JOIN chats c ON m.chat_jid = c.jid
+		WHERE m.id = ?`
+	args := []interface{}{id}
+	if chatJID != nil {
+		query += " AND m.chat_jid = ?"
+		args = append(args, *chatJID)
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return Message{}, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var m Message
+		var chatName sql.NullString
+		if err := rows.Scan(&m.ID, &m.ChatJID, &chatName, &m.Sender, &m.Content, &m.Timestamp, &m.IsFromMe, &m.MediaType); err != nil {
+			return Message{}, err
+		}
+		if chatName.Valid {
+			m.ChatName = chatName.String
+		}
+		messages = append(messages, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return Message{}, err
+	}
+
+	if len(messages) == 0 {
+		return Message{}, sql.ErrNoRows
+	}
+	if len(messages) > 1 && chatJID == nil {
+		return Message{}, fmt.Errorf("multiple messages found with ID %s; specify chat JID", id)
+	}
+
+	return messages[0], nil
+}
+
 func (s *MessageStore) MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error {
 	_, err := s.db.Exec(
 		`UPDATE messages

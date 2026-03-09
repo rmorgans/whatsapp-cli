@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -166,6 +167,80 @@ func TestSearchContacts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, contacts, 1)
 	assert.Equal(t, "John Doe", contacts[0].Name)
+}
+
+func TestGetMessageMetadata(t *testing.T) {
+	s := setupTestDB(t)
+	chatJID := "1234@s.whatsapp.net"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.StoreChat(chatJID, "John Doe", now))
+	require.NoError(t, s.StoreMessage("msg1", chatJID, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+
+	msg, err := s.GetMessageMetadata("msg1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "msg1", msg.ID)
+	assert.Equal(t, chatJID, msg.ChatJID)
+	assert.Equal(t, "John Doe", msg.ChatName)
+	assert.Equal(t, "1234", msg.Sender)
+	assert.Equal(t, "Hello", msg.Content)
+	assert.True(t, msg.Timestamp.Equal(now))
+	assert.False(t, msg.IsFromMe)
+}
+
+func TestGetMessageMetadataWithChatJID(t *testing.T) {
+	s := setupTestDB(t)
+	chatJID := "1234@s.whatsapp.net"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.StoreChat(chatJID, "John Doe", now))
+	require.NoError(t, s.StoreMessage("msg1", chatJID, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+
+	msg, err := s.GetMessageMetadata("msg1", &chatJID)
+	require.NoError(t, err)
+	assert.Equal(t, "msg1", msg.ID)
+	assert.Equal(t, chatJID, msg.ChatJID)
+}
+
+func TestGetMessageMetadataNotFound(t *testing.T) {
+	s := setupTestDB(t)
+
+	_, err := s.GetMessageMetadata("nonexistent", nil)
+	assert.ErrorIs(t, err, sql.ErrNoRows)
+}
+
+func TestGetMessageMetadataMultipleChatsNoFilter(t *testing.T) {
+	s := setupTestDB(t)
+	chat1 := "1234@s.whatsapp.net"
+	chat2 := "5678@s.whatsapp.net"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.StoreChat(chat1, "John", now))
+	require.NoError(t, s.StoreChat(chat2, "Jane", now))
+	require.NoError(t, s.StoreMessage("msg1", chat1, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage("msg1", chat2, "5678", "Hi", now, false, "", "", "", "", "", nil, nil, nil, 0))
+
+	_, err := s.GetMessageMetadata("msg1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple messages found with ID msg1")
+}
+
+func TestGetMessageMetadataMultipleChatsWithFilter(t *testing.T) {
+	s := setupTestDB(t)
+	chat1 := "1234@s.whatsapp.net"
+	chat2 := "5678@s.whatsapp.net"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.StoreChat(chat1, "John", now))
+	require.NoError(t, s.StoreChat(chat2, "Jane", now))
+	require.NoError(t, s.StoreMessage("msg1", chat1, "1234", "Hello", now, false, "", "", "", "", "", nil, nil, nil, 0))
+	require.NoError(t, s.StoreMessage("msg1", chat2, "5678", "Hi", now, false, "", "", "", "", "", nil, nil, nil, 0))
+
+	msg, err := s.GetMessageMetadata("msg1", &chat2)
+	require.NoError(t, err)
+	assert.Equal(t, chat2, msg.ChatJID)
+	assert.Equal(t, "5678", msg.Sender)
+	assert.Equal(t, "Hi", msg.Content)
 }
 
 func TestListChats(t *testing.T) {

@@ -31,6 +31,7 @@ type MessageStore interface {
 		mediaType, filename, url, directPath, mimeType string,
 		mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error
 	GetMessageForDownload(id string, chatJID *string) (store.MessageDownloadInfo, error)
+	GetMessageMetadata(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error
 	Close() error
 }
