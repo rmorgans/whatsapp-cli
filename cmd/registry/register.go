@@ -83,6 +83,7 @@ func (r *Registry) RegisterParent(spec ParentSpec) {
 		Short:  spec.Short,
 		Long:   spec.Long,
 		Hidden: spec.Hidden,
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("%s requires a subcommand; see --help", cmd.Name())
 		},
