@@ -37,7 +37,9 @@ type MessageStore interface {
 	GetMessageMetadata(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error
 	GetLIDSenders() ([]store.LIDSenderRow, error)
+	GetBareSenders() ([]string, error)
 	UpdateSender(id, chatJID, newSender string) error
+	UpdateSenderBatch(oldSender, newSender string) (int64, error)
 	GetLIDChats() ([]store.LIDChatRow, error)
 	UpdateChatJID(oldJID, newJID string) error
 	Close() error

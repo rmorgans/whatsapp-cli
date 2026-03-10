@@ -21,7 +21,9 @@ type MockMessageStore struct {
 	GetMessageMetadataFunc    func(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloadedFunc func(id, chatJID, localPath string, downloadedAt time.Time) error
 	GetLIDSendersFunc       func() ([]store.LIDSenderRow, error)
+	GetBareSendersFunc      func() ([]string, error)
 	UpdateSenderFunc        func(id, chatJID, newSender string) error
+	UpdateSenderBatchFunc   func(oldSender, newSender string) (int64, error)
 	GetLIDChatsFunc         func() ([]store.LIDChatRow, error)
 	UpdateChatJIDFunc       func(oldJID, newJID string) error
 	CloseFunc               func() error
@@ -90,11 +92,25 @@ func (m *MockMessageStore) GetLIDSenders() ([]store.LIDSenderRow, error) {
 	return nil, nil
 }
 
+func (m *MockMessageStore) GetBareSenders() ([]string, error) {
+	if m.GetBareSendersFunc != nil {
+		return m.GetBareSendersFunc()
+	}
+	return nil, nil
+}
+
 func (m *MockMessageStore) UpdateSender(id, chatJID, newSender string) error {
 	if m.UpdateSenderFunc != nil {
 		return m.UpdateSenderFunc(id, chatJID, newSender)
 	}
 	return nil
+}
+
+func (m *MockMessageStore) UpdateSenderBatch(oldSender, newSender string) (int64, error) {
+	if m.UpdateSenderBatchFunc != nil {
+		return m.UpdateSenderBatchFunc(oldSender, newSender)
+	}
+	return 0, nil
 }
 
 func (m *MockMessageStore) GetLIDChats() ([]store.LIDChatRow, error) {

@@ -514,8 +514,9 @@ type LIDSenderRow struct {
 	Sender  string
 }
 
-// GetLIDSenders returns all message rows where the sender looks like a LID
-// (contains "@lid" suffix). These are candidates for resolution.
+// GetLIDSenders returns all message rows where the sender is a LID.
+// Matches both full LID JIDs (e.g. "278378372440237@lid") and bare LID
+// user parts (e.g. "278378372440237") that were stored by older code.
 func (s *MessageStore) GetLIDSenders() ([]LIDSenderRow, error) {
 	rows, err := s.db.Query(
 		`SELECT id, chat_jid, sender FROM messages WHERE sender LIKE '%@lid'`,
@@ -534,6 +535,43 @@ func (s *MessageStore) GetLIDSenders() ([]LIDSenderRow, error) {
 		result = append(result, r)
 	}
 	return result, rows.Err()
+}
+
+// GetBareSenders returns distinct bare sender values (no @ symbol)
+// that could be unresolved LID user parts from older sync code.
+// The caller should attempt LID resolution on each to determine
+// which are actually LIDs vs phone numbers.
+func (s *MessageStore) GetBareSenders() ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT sender FROM messages
+		 WHERE sender NOT LIKE '%@%' AND sender <> 'me' AND length(sender) > 10`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []string
+	for rows.Next() {
+		var sender string
+		if err := rows.Scan(&sender); err != nil {
+			return nil, err
+		}
+		result = append(result, sender)
+	}
+	return result, rows.Err()
+}
+
+// UpdateSenderBatch updates all messages with a given sender to a new value.
+func (s *MessageStore) UpdateSenderBatch(oldSender, newSender string) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE messages SET sender = ? WHERE sender = ?`,
+		newSender, oldSender,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // UpdateSender updates the sender field for a specific message.

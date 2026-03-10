@@ -1160,30 +1160,59 @@ func (a *App) repairLIDIdentities(ctx context.Context) {
 }
 
 func (a *App) repairLIDSenders(ctx context.Context) {
+	// Phase 1: Fix full LID JIDs (e.g. "278378372440237@lid")
 	rows, err := a.store.GetLIDSenders()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "⚠ failed to scan LID senders: %v\n", err)
 		return
 	}
-	if len(rows) == 0 {
-		return
+	repaired, unresolved := 0, 0
+	if len(rows) > 0 {
+		fmt.Fprintf(os.Stderr, "🔧 Repairing %d stored LID sender identities...\n", len(rows))
+		for _, r := range rows {
+			resolved := a.client.ResolveJID(ctx, r.Sender)
+			if resolved == r.Sender {
+				unresolved++
+				continue
+			}
+			if err := a.store.UpdateSender(r.ID, r.ChatJID, resolved); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ failed to update sender for %s: %v\n", r.ID, err)
+				continue
+			}
+			repaired++
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "🔧 Repairing %d stored LID sender identities...\n", len(rows))
-	repaired, unresolved := 0, 0
-	for _, r := range rows {
-		resolved := a.client.ResolveJID(ctx, r.Sender)
-		if resolved == r.Sender {
-			unresolved++
-			continue
-		}
-		if err := a.store.UpdateSender(r.ID, r.ChatJID, resolved); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠ failed to update sender for %s: %v\n", r.ID, err)
-			continue
-		}
-		repaired++
+	// Phase 2: Fix bare LID user parts (e.g. "278378372440237" without @lid).
+	// Older HandleMessage extracted Sender.User which strips the @lid suffix.
+	bareSenders, err := a.store.GetBareSenders()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ failed to scan bare senders: %v\n", err)
 	}
-	fmt.Fprintf(os.Stderr, "🔧 Senders: %d fixed, %d unresolved\n", repaired, unresolved)
+	bareFixed := 0
+	for _, sender := range bareSenders {
+		// Try resolving as a LID by appending @lid.
+		resolved := a.client.ResolveJID(ctx, sender+"@lid")
+		if resolved == sender+"@lid" {
+			continue // Not a known LID — probably a phone number, leave it.
+		}
+		// Strip the @s.whatsapp.net suffix to match the bare format used for senders.
+		newSender := strings.TrimSuffix(resolved, "@s.whatsapp.net")
+		if newSender == sender {
+			continue
+		}
+		n, err := a.store.UpdateSenderBatch(sender, newSender)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ failed to batch update sender %s: %v\n", sender, err)
+			continue
+		}
+		bareFixed += int(n)
+	}
+
+	total := repaired + bareFixed
+	if total > 0 || unresolved > 0 {
+		fmt.Fprintf(os.Stderr, "🔧 Senders: %d fixed, %d unresolved\n", total, unresolved)
+	}
 }
 
 func (a *App) repairLIDChats(ctx context.Context) {
