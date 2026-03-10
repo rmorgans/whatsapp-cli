@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/vicentereig/whatsapp-cli/internal/client"
 	"github.com/vicentereig/whatsapp-cli/internal/store"
 	"github.com/vicentereig/whatsapp-cli/internal/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // MockMessageStore implements MessageStore for testing.
@@ -18,6 +20,10 @@ type MockMessageStore struct {
 	GetMessageForDownloadFunc func(id string, chatJID *string) (store.MessageDownloadInfo, error)
 	GetMessageMetadataFunc    func(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloadedFunc func(id, chatJID, localPath string, downloadedAt time.Time) error
+	GetLIDSendersFunc       func() ([]store.LIDSenderRow, error)
+	UpdateSenderFunc        func(id, chatJID, newSender string) error
+	GetLIDChatsFunc         func() ([]store.LIDChatRow, error)
+	UpdateChatJIDFunc       func(oldJID, newJID string) error
 	CloseFunc               func() error
 }
 
@@ -77,6 +83,34 @@ func (m *MockMessageStore) MarkMediaDownloaded(id, chatJID, localPath string, do
 	return nil
 }
 
+func (m *MockMessageStore) GetLIDSenders() ([]store.LIDSenderRow, error) {
+	if m.GetLIDSendersFunc != nil {
+		return m.GetLIDSendersFunc()
+	}
+	return nil, nil
+}
+
+func (m *MockMessageStore) UpdateSender(id, chatJID, newSender string) error {
+	if m.UpdateSenderFunc != nil {
+		return m.UpdateSenderFunc(id, chatJID, newSender)
+	}
+	return nil
+}
+
+func (m *MockMessageStore) GetLIDChats() ([]store.LIDChatRow, error) {
+	if m.GetLIDChatsFunc != nil {
+		return m.GetLIDChatsFunc()
+	}
+	return nil, nil
+}
+
+func (m *MockMessageStore) UpdateChatJID(oldJID, newJID string) error {
+	if m.UpdateChatJIDFunc != nil {
+		return m.UpdateChatJIDFunc(oldJID, newJID)
+	}
+	return nil
+}
+
 func (m *MockMessageStore) Close() error {
 	if m.CloseFunc != nil {
 		return m.CloseFunc()
@@ -104,6 +138,8 @@ type MockWAClient struct {
 	ResolveChatNameFunc        func(ctx context.Context, jid string, evt interface{}) string
 	DownloadMediaToFileFunc    func(ctx context.Context, req types.MediaDownloadRequest, targetPath string) (int64, error)
 	StartSyncFunc              func(ctx context.Context, eventHandler func(interface{})) error
+	HandleMessageFunc          func(ctx context.Context, msg *events.Message) client.MessageDetails
+	ResolveJIDFunc             func(ctx context.Context, jid string) string
 
 	// Contact operations
 	UpdateBlocklistFunc        func(ctx context.Context, jid string, action string) error
@@ -246,6 +282,20 @@ func (m *MockWAClient) StartSync(ctx context.Context, eventHandler func(interfac
 		return m.StartSyncFunc(ctx, eventHandler)
 	}
 	return nil
+}
+
+func (m *MockWAClient) HandleMessage(ctx context.Context, msg *events.Message) client.MessageDetails {
+	if m.HandleMessageFunc != nil {
+		return m.HandleMessageFunc(ctx, msg)
+	}
+	return client.MessageDetails{}
+}
+
+func (m *MockWAClient) ResolveJID(ctx context.Context, jid string) string {
+	if m.ResolveJIDFunc != nil {
+		return m.ResolveJIDFunc(ctx, jid)
+	}
+	return jid
 }
 
 func (m *MockWAClient) UpdateBlocklist(ctx context.Context, jid string, action string) error {

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,6 +12,13 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	goproto "google.golang.org/protobuf/proto"
 )
+
+// testClient returns a WAClient suitable for HandleMessage tests.
+// Senders in these tests use @s.whatsapp.net JIDs, so LID resolution
+// is never invoked and the underlying whatsmeow client can be nil.
+func testClient() *WAClient {
+	return &WAClient{}
+}
 
 func TestHandleMessageReturnsTextContentWithoutMedia(t *testing.T) {
 	now := time.Unix(1700000000, 0).UTC()
@@ -29,7 +37,7 @@ func TestHandleMessageReturnsTextContentWithoutMedia(t *testing.T) {
 		},
 	}
 
-	details := HandleMessage(msg)
+	details := testClient().HandleMessage(context.Background(), msg)
 
 	assert.Equal(t, "txt-1", details.ID)
 	assert.Equal(t, "12345@s.whatsapp.net", details.ChatJID)
@@ -70,7 +78,7 @@ func TestHandleMessageExtractsImageMediaMetadata(t *testing.T) {
 		},
 	}
 
-	details := HandleMessage(msg)
+	details := testClient().HandleMessage(context.Background(), msg)
 	require.NotNil(t, details.Media)
 
 	assert.Equal(t, "img-1", details.ID)

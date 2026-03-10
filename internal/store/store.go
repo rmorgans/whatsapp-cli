@@ -506,3 +506,121 @@ func (s *MessageStore) ListChats(params ListChatsParams) ([]Chat, error) {
 
 	return chats, nil
 }
+
+// LIDSenderRow represents a message row with an unresolved LID sender.
+type LIDSenderRow struct {
+	ID      string
+	ChatJID string
+	Sender  string
+}
+
+// GetLIDSenders returns all message rows where the sender looks like a LID
+// (contains "@lid" suffix). These are candidates for resolution.
+func (s *MessageStore) GetLIDSenders() ([]LIDSenderRow, error) {
+	rows, err := s.db.Query(
+		`SELECT id, chat_jid, sender FROM messages WHERE sender LIKE '%@lid'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []LIDSenderRow
+	for rows.Next() {
+		var r LIDSenderRow
+		if err := rows.Scan(&r.ID, &r.ChatJID, &r.Sender); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// UpdateSender updates the sender field for a specific message.
+func (s *MessageStore) UpdateSender(id, chatJID, newSender string) error {
+	_, err := s.db.Exec(
+		`UPDATE messages SET sender = ? WHERE id = ? AND chat_jid = ?`,
+		newSender, id, chatJID,
+	)
+	return err
+}
+
+// LIDChatRow represents a chat row with an unresolved LID as the JID.
+type LIDChatRow struct {
+	JID  string
+	Name string
+}
+
+// GetLIDChats returns all chat rows where the JID is a LID.
+func (s *MessageStore) GetLIDChats() ([]LIDChatRow, error) {
+	rows, err := s.db.Query(
+		`SELECT jid, name FROM chats WHERE jid LIKE '%@lid'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []LIDChatRow
+	for rows.Next() {
+		var r LIDChatRow
+		if err := rows.Scan(&r.JID, &r.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// UpdateChatJID migrates a chat from an old LID-based JID to a resolved
+// phone-number JID, handling duplicates and foreign key constraints.
+func (s *MessageStore) UpdateChatJID(oldJID, newJID string) error {
+	// PRAGMA foreign_keys is a no-op inside transactions in SQLite,
+	// so we must disable it at the connection level first.
+	if _, err := s.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer s.db.Exec(`PRAGMA foreign_keys = ON`)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete duplicate messages that already exist under the new JID.
+	// These arise when the same message was synced under both the LID
+	// and phone-number chat identities.
+	if _, err := tx.Exec(`
+		DELETE FROM messages
+		WHERE chat_jid = ? AND id IN (
+			SELECT id FROM messages WHERE chat_jid = ?
+		)`, oldJID, newJID); err != nil {
+		return err
+	}
+
+	// Migrate remaining messages to the new chat JID.
+	if _, err := tx.Exec(`UPDATE messages SET chat_jid = ? WHERE chat_jid = ?`, newJID, oldJID); err != nil {
+		return err
+	}
+
+	// Check if the target chat already exists.
+	var existing int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM chats WHERE jid = ?`, newJID).Scan(&existing); err != nil {
+		return err
+	}
+
+	if existing > 0 {
+		// Target exists — just delete the old LID chat entry.
+		if _, err := tx.Exec(`DELETE FROM chats WHERE jid = ?`, oldJID); err != nil {
+			return err
+		}
+	} else {
+		// Target doesn't exist — rename the chat.
+		if _, err := tx.Exec(`UPDATE chats SET jid = ? WHERE jid = ?`, newJID, oldJID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}

@@ -15,9 +15,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/vicentereig/whatsapp-cli/internal/client"
 	"github.com/vicentereig/whatsapp-cli/internal/store"
 	"github.com/vicentereig/whatsapp-cli/internal/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
+
+// Ensure client.WAClient satisfies the WAClient interface at compile time.
+var _ WAClient = (*client.WAClient)(nil)
 
 // MessageStore defines the interface for message persistence.
 // The concrete implementation is store.MessageStore.
@@ -31,6 +36,10 @@ type MessageStore interface {
 	GetMessageForDownload(id string, chatJID *string) (store.MessageDownloadInfo, error)
 	GetMessageMetadata(id string, chatJID *string) (store.Message, error)
 	MarkMediaDownloaded(id, chatJID, localPath string, downloadedAt time.Time) error
+	GetLIDSenders() ([]store.LIDSenderRow, error)
+	UpdateSender(id, chatJID, newSender string) error
+	GetLIDChats() ([]store.LIDChatRow, error)
+	UpdateChatJID(oldJID, newJID string) error
 	Close() error
 }
 
@@ -55,6 +64,8 @@ type WAClient interface {
 	EditMessage(ctx context.Context, chatJID, messageID, newText string) error
 	MarkRead(ctx context.Context, messageIDs []string, timestamp time.Time, chatJID, senderJID string) error
 	StartSync(ctx context.Context, eventHandler func(interface{})) error
+	HandleMessage(ctx context.Context, msg *events.Message) client.MessageDetails
+	ResolveJID(ctx context.Context, jid string) string
 
 	// Contact operations
 	UpdateBlocklist(ctx context.Context, jid string, action string) error

@@ -17,6 +17,8 @@ var waClientInfrastructureMethods = map[string]bool{
 	"GetOwnJID":       true, // Called internally by Sync
 	"ResolveChatName": true, // Called internally by Sync
 	"StartSync":       true, // Called internally by Sync command
+	"HandleMessage":   true, // Called internally by Sync event handler
+	"ResolveJID":      true, // Called internally to resolve LID→phone JIDs
 }
 
 // Mapping from WAClient method → CLI command that exposes it.

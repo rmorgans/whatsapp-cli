@@ -928,12 +928,15 @@ func (a *App) Sync(ctx context.Context) string {
 		}
 	}()
 
+	// Repair any stored LID identities from before LID resolution was added.
+	a.repairLIDIdentities(ctx)
+
 	// Create event handler
 	eventHandler := func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
 			// Extract message details
-			details := client.HandleMessage(v)
+			details := a.client.HandleMessage(ctx, v)
 			id := details.ID
 			chatJID := details.ChatJID
 			sender := details.Sender
@@ -1016,9 +1019,9 @@ func (a *App) Sync(ctx context.Context) string {
 
 					histMsg := msg.Message
 					msgID := histMsg.Key.GetID()
-					sender := histMsg.Key.GetParticipant()
+					sender := a.client.ResolveJID(ctx, histMsg.Key.GetParticipant())
 					if sender == "" {
-						sender = histMsg.Key.GetRemoteJID()
+						sender = a.client.ResolveJID(ctx, histMsg.Key.GetRemoteJID())
 					}
 					isFromMe := histMsg.Key.GetFromMe()
 					msgTimestamp := time.Unix(int64(histMsg.GetMessageTimestamp()), 0)
@@ -1145,6 +1148,69 @@ func (a *App) Sync(ctx context.Context) string {
 		"synced":         true,
 		"messages_count": messageCount,
 	})
+}
+
+// repairLIDIdentities scans stored messages and chats for unresolved LID
+// identities and resolves them to phone-number JIDs using the whatsmeow
+// LID mapping store. Runs once at sync startup. Unresolvable rows are
+// left untouched and retried on next sync.
+func (a *App) repairLIDIdentities(ctx context.Context) {
+	a.repairLIDSenders(ctx)
+	a.repairLIDChats(ctx)
+}
+
+func (a *App) repairLIDSenders(ctx context.Context) {
+	rows, err := a.store.GetLIDSenders()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ failed to scan LID senders: %v\n", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "🔧 Repairing %d stored LID sender identities...\n", len(rows))
+	repaired, unresolved := 0, 0
+	for _, r := range rows {
+		resolved := a.client.ResolveJID(ctx, r.Sender)
+		if resolved == r.Sender {
+			unresolved++
+			continue
+		}
+		if err := a.store.UpdateSender(r.ID, r.ChatJID, resolved); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ failed to update sender for %s: %v\n", r.ID, err)
+			continue
+		}
+		repaired++
+	}
+	fmt.Fprintf(os.Stderr, "🔧 Senders: %d fixed, %d unresolved\n", repaired, unresolved)
+}
+
+func (a *App) repairLIDChats(ctx context.Context) {
+	rows, err := a.store.GetLIDChats()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ failed to scan LID chats: %v\n", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "🔧 Repairing %d stored LID chat identities...\n", len(rows))
+	repaired, unresolved := 0, 0
+	for _, r := range rows {
+		resolved := a.client.ResolveJID(ctx, r.JID)
+		if resolved == r.JID {
+			unresolved++
+			continue
+		}
+		if err := a.store.UpdateChatJID(r.JID, resolved); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ failed to update chat JID %s: %v\n", r.JID, err)
+			continue
+		}
+		repaired++
+	}
+	fmt.Fprintf(os.Stderr, "🔧 Chats: %d fixed, %d unresolved\n", repaired, unresolved)
 }
 
 func resolveVersion(version string, describeFn func() (string, error)) string {

@@ -620,9 +620,57 @@ func mediaTypeFromString(mediaType string) (whatsmeow.MediaType, error) {
 	}
 }
 
-// Helper to handle incoming messages
-func HandleMessage(msg *events.Message) MessageDetails {
-	sender := msg.Info.Sender.User
+// ResolveJID resolves a JID string, converting LID-based JIDs to their
+// phone-number-based equivalents when a mapping exists in the local store.
+// Falls back to the original JID string if no mapping is found.
+func (w *WAClient) ResolveJID(ctx context.Context, jid string) string {
+	parsed, err := waTypes.ParseJID(jid)
+	if err != nil {
+		return jid
+	}
+	if parsed.Server != waTypes.HiddenUserServer {
+		return jid
+	}
+	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, parsed)
+	if err != nil || pn.IsEmpty() {
+		return jid
+	}
+	return pn.String()
+}
+
+// resolveSenderJID resolves a waTypes.JID for use as a message sender,
+// returning the User part (phone number) or full JID string for non-standard JIDs.
+func (w *WAClient) resolveSenderJID(ctx context.Context, jid waTypes.JID) string {
+	if jid.Server != waTypes.HiddenUserServer {
+		if jid.User != "" {
+			return jid.User
+		}
+		return jid.String()
+	}
+	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, jid)
+	if err != nil || pn.IsEmpty() {
+		return jid.String()
+	}
+	return pn.User
+}
+
+// resolveParticipantJID resolves a waTypes.JID for use as a group participant,
+// returning the full JID string (e.g. "61412345678@s.whatsapp.net").
+func (w *WAClient) resolveParticipantJID(ctx context.Context, jid waTypes.JID) string {
+	if jid.Server != waTypes.HiddenUserServer {
+		return jid.String()
+	}
+	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, jid)
+	if err != nil || pn.IsEmpty() {
+		return jid.String()
+	}
+	return pn.String()
+}
+
+// HandleMessage extracts message details from a whatsmeow event, resolving
+// LID-based sender JIDs to phone numbers when possible.
+func (w *WAClient) HandleMessage(ctx context.Context, msg *events.Message) MessageDetails {
+	sender := w.resolveSenderJID(ctx, msg.Info.Sender)
 	if sender == "" {
 		if s := msg.Info.Sender.String(); s != "" {
 			sender = s
@@ -801,7 +849,7 @@ func (w *WAClient) GetJoinedGroups(ctx context.Context) ([]types.GroupInfo, erro
 
 	result := make([]types.GroupInfo, 0, len(groups))
 	for _, g := range groups {
-		result = append(result, mapGroupInfo(g))
+		result = append(result, w.mapGroupInfo(ctx, g))
 	}
 	return result, nil
 }
@@ -821,7 +869,7 @@ func (w *WAClient) GetGroupInfo(ctx context.Context, jid string) (*types.GroupIn
 		return nil, fmt.Errorf("getting group info: %w", err)
 	}
 
-	gi := mapGroupInfo(info)
+	gi := w.mapGroupInfo(ctx, info)
 	return &gi, nil
 }
 
@@ -843,7 +891,7 @@ func (w *WAClient) CreateGroup(ctx context.Context, name string, members []strin
 		return nil, fmt.Errorf("creating group: %w", err)
 	}
 
-	gi := mapGroupInfo(info)
+	gi := w.mapGroupInfo(ctx, info)
 	return &gi, nil
 }
 
@@ -977,12 +1025,13 @@ func (w *WAClient) SetGroupPhoto(ctx context.Context, jid, imagePath string) err
 	return nil
 }
 
-// mapGroupInfo converts a whatsmeow GroupInfo to our internal type.
-func mapGroupInfo(g *waTypes.GroupInfo) types.GroupInfo {
+// mapGroupInfo converts a whatsmeow GroupInfo to our internal type,
+// resolving LID-based participant JIDs to phone numbers when possible.
+func (w *WAClient) mapGroupInfo(ctx context.Context, g *waTypes.GroupInfo) types.GroupInfo {
 	members := make([]types.GroupParticipant, 0, len(g.Participants))
 	for _, p := range g.Participants {
 		members = append(members, types.GroupParticipant{
-			JID:          p.JID.String(),
+			JID:          w.resolveParticipantJID(ctx, p.JID),
 			IsAdmin:      p.IsAdmin,
 			IsSuperAdmin: p.IsSuperAdmin,
 		})
