@@ -36,18 +36,20 @@ var registry = map[string]humanFormatter{
 }
 
 // FormatHuman looks up a per-command formatter by command ID.
-// Returns the formatted string if a custom formatter exists and succeeds.
-// Returns empty string and false if no custom formatter or it fails (caller falls back to generic).
-func FormatHuman(commandID string, env Envelope) (string, bool) {
+// Returns (formatted, true, nil) on success.
+// Returns ("", false, nil) if no custom formatter is registered.
+// Returns ("", false, err) if the formatter fails — the caller should
+// decide whether to fall back to generic output or surface the error.
+func FormatHuman(commandID string, env Envelope) (string, bool, error) {
 	fn, ok := registry[commandID]
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
 	result, err := fn(env)
 	if err != nil {
-		return "", false
+		return "", false, fmt.Errorf("formatting %s: %w", commandID, err)
 	}
-	return result, true
+	return result, true, nil
 }
 
 // --- Data types for JSON unmarshalling ---

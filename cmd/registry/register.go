@@ -426,9 +426,11 @@ func (r *Registry) printResult(commandID, result string) {
 	}
 
 	// ModeHuman: try per-command formatter first.
-	if formatted, ok := output.FormatHuman(commandID, env); ok {
+	if formatted, ok, err := output.FormatHuman(commandID, env); ok {
 		fmt.Fprintln(r.writer, formatted)
 		return
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ %v\n", err)
 	}
 
 	// Try generic formatter.

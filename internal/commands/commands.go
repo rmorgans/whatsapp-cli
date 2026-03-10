@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vicentereig/whatsapp-cli/internal/client"
@@ -909,7 +910,7 @@ func (w *mediaDownloadWorker) Stop() {
 
 // Sync connects to WhatsApp and continuously syncs messages to the database
 func (a *App) Sync(ctx context.Context) string {
-	messageCount := 0
+	var messageCount atomic.Int64
 
 	version := a.version
 	if strings.TrimSpace(version) == "" {
@@ -996,8 +997,8 @@ func (a *App) Sync(ctx context.Context) string {
 				worker.Enqueue(mediaJob{messageID: id, chatJID: chatJID})
 			}
 
-			messageCount++
-			fmt.Fprintf(os.Stderr, "\r💬 Synced %d messages...", messageCount)
+			messageCount.Add(1)
+			fmt.Fprintf(os.Stderr, "\r💬 Synced %d messages...", messageCount.Load())
 
 		case *events.HistorySync:
 			fmt.Fprintf(os.Stderr, "\n📜 Processing history sync (%d conversations)...\n", len(v.Data.Conversations))
@@ -1119,10 +1120,10 @@ func (a *App) Sync(ctx context.Context) string {
 						worker.Enqueue(mediaJob{messageID: msgID, chatJID: chatJID})
 					}
 
-					messageCount++
+					messageCount.Add(1)
 				}
 			}
-			fmt.Fprintf(os.Stderr, "\r💬 Synced %d messages...", messageCount)
+			fmt.Fprintf(os.Stderr, "\r💬 Synced %d messages...", messageCount.Load())
 
 		case *events.Connected:
 			fmt.Fprintln(os.Stderr, "\n✓ Connected to WhatsApp")
@@ -1142,11 +1143,12 @@ func (a *App) Sync(ctx context.Context) string {
 	// Wait for context cancellation (Ctrl+C)
 	<-ctx.Done()
 
-	fmt.Fprintf(os.Stderr, "\n\n✓ Sync completed. Total messages synced: %d\n", messageCount)
+	total := messageCount.Load()
+	fmt.Fprintf(os.Stderr, "\n\n✓ Sync completed. Total messages synced: %d\n", total)
 
 	return output.Success(map[string]interface{}{
 		"synced":         true,
-		"messages_count": messageCount,
+		"messages_count": total,
 	})
 }
 

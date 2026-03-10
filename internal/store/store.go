@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -612,15 +613,24 @@ func (s *MessageStore) GetLIDChats() ([]LIDChatRow, error) {
 
 // UpdateChatJID migrates a chat from an old LID-based JID to a resolved
 // phone-number JID, handling duplicates and foreign key constraints.
+//
+// We pin a single database connection with db.Conn() so the PRAGMA
+// foreign_keys = OFF applies to the same connection that runs the
+// transaction. Without pinning, database/sql's connection pool may
+// hand back a different connection for Begin(), making the pragma a no-op.
 func (s *MessageStore) UpdateChatJID(oldJID, newJID string) error {
-	// PRAGMA foreign_keys is a no-op inside transactions in SQLite,
-	// so we must disable it at the connection level first.
-	if _, err := s.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+	conn, err := s.db.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("pinning connection: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(context.Background(), `PRAGMA foreign_keys = OFF`); err != nil {
 		return err
 	}
-	defer s.db.Exec(`PRAGMA foreign_keys = ON`)
+	defer conn.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`)
 
-	tx, err := s.db.Begin()
+	tx, err := conn.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
 	}

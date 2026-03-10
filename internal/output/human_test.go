@@ -16,11 +16,12 @@ func TestFormatHuman_UnknownCommand(t *testing.T) {
 	t.Parallel()
 
 	env := envelope(true, map[string]interface{}{"foo": "bar"}, nil)
-	_, ok := FormatHuman("no.such.command", env)
+	_, ok, err := FormatHuman("no.such.command", env)
 	assert.False(t, ok)
+	assert.NoError(t, err)
 }
 
-func TestFormatHuman_BadData_ReturnsFalse(t *testing.T) {
+func TestFormatHuman_BadData_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	// send formatter expects an object, give it a string
@@ -28,8 +29,10 @@ func TestFormatHuman_BadData_ReturnsFalse(t *testing.T) {
 		Success: true,
 		Data:    json.RawMessage(`"not an object"`),
 	}
-	_, ok := FormatHuman("send", env)
+	_, ok, err := FormatHuman("send", env)
 	assert.False(t, ok)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "formatting send")
 }
 
 func TestFormatHuman_KnownCommand_ReturnsTrue(t *testing.T) {
@@ -40,8 +43,9 @@ func TestFormatHuman_KnownCommand_ReturnsTrue(t *testing.T) {
 		"id":        "ABC123",
 		"recipient": "61412345678@s.whatsapp.net",
 	}, nil)
-	result, ok := FormatHuman("send", env)
+	result, ok, err := FormatHuman("send", env)
 	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, "Sent to 61412345678@s.whatsapp.net (ID: ABC123)", result)
 }
 
@@ -137,10 +141,12 @@ func TestFormatMessages_SharedCommand(t *testing.T) {
 	}, nil)
 
 	// Both messages.list and messages.search should use the same formatter.
-	r1, ok1 := FormatHuman("messages.list", env)
-	r2, ok2 := FormatHuman("messages.search", env)
+	r1, ok1, err1 := FormatHuman("messages.list", env)
+	r2, ok2, err2 := FormatHuman("messages.search", env)
 	assert.True(t, ok1)
 	assert.True(t, ok2)
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
 	assert.Equal(t, r1, r2)
 }
 
@@ -433,8 +439,9 @@ func TestMutationFormatters(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := envelope(true, tt.data, nil)
-			result, ok := FormatHuman(tt.commandID, env)
+			result, ok, err := FormatHuman(tt.commandID, env)
 			assert.True(t, ok)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.want, result)
 		})
 	}
