@@ -230,10 +230,23 @@ All commands support these global flags:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--store` | string | `./store` | Directory for session and message databases |
+| `--format` | string | `json` | Output format: `json`, `human`, or `auto` |
 
-**Example:**
+The default output is JSON (the agent contract). Use `--format human` for readable tables and one-liners, or `--format auto` to detect automatically (human in a terminal, JSON when piped).
+
+**Examples:**
 ```bash
+# JSON output (default)
 whatsapp-cli --store /var/lib/whatsapp chats list
+
+# Human-readable tables
+whatsapp-cli --store /var/lib/whatsapp --format human chats list
+
+# Auto-detect (human in terminal, JSON in pipes)
+whatsapp-cli --store /var/lib/whatsapp --format auto chats list
+
+# Shell alias for ergonomic interactive use
+alias wa='whatsapp-cli --store ~/.config/whatsapp-cli/store --format auto'
 ```
 
 ---

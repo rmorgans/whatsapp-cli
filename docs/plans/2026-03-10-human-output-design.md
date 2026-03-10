@@ -20,7 +20,6 @@ type Envelope struct {
     Error   *string
 }
 
-// output/render.go
 type OutputMode int
 
 const (
@@ -28,13 +27,12 @@ const (
     ModeHuman
 )
 
-type RenderContext struct {
-    CommandID   string
-    CommandPath string
-    Mode        OutputMode
-}
+// output/human.go
+type humanFormatter func(env Envelope) (string, error)  // unexported, per-command
+func FormatHuman(commandID string, env Envelope) (string, bool)
 
-type Formatter func(ctx RenderContext, env Envelope) (string, error)
+// output/generic.go
+func GenericFormat(env Envelope) (string, error)
 ```
 
 ## Output Mode Resolution
