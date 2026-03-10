@@ -28,7 +28,7 @@ const defaultTimeout = 5 * time.Minute
 type Registry struct {
 	version    string
 	storeDir   string
-	outputFlag string // raw --output flag value
+	formatFlag string // raw --format flag value
 	app        *commands.App
 	exitCode   int
 	root       *cobra.Command
@@ -77,13 +77,13 @@ func newRootCmd(r *Registry) *cobra.Command {
 	cmd.SetOut(os.Stderr)
 	cmd.SetErr(os.Stderr)
 	cmd.PersistentFlags().StringVar(&r.storeDir, "store", "./store", "storage directory")
-	cmd.PersistentFlags().StringVar(&r.outputFlag, "output", "json", "output format: json, human, or auto")
+	cmd.PersistentFlags().StringVar(&r.formatFlag, "format", "json", "output format: json, human, or auto")
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		switch r.outputFlag {
+		switch r.formatFlag {
 		case "json", "human", "auto":
 			return nil
 		default:
-			return fmt.Errorf("--output must be one of [json, human, auto], got %q", r.outputFlag)
+			return fmt.Errorf("--format must be one of [json, human, auto], got %q", r.formatFlag)
 		}
 	}
 	return cmd
@@ -387,7 +387,7 @@ func errorJSON(msg string) string {
 
 // resolveOutputMode converts the --output flag value to an OutputMode.
 func (r *Registry) resolveOutputMode() output.OutputMode {
-	switch r.outputFlag {
+	switch r.formatFlag {
 	case "human":
 		return output.ModeHuman
 	case "auto":

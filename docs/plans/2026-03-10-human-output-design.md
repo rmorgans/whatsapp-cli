@@ -40,23 +40,23 @@ type Formatter func(ctx RenderContext, env Envelope) (string, error)
 ## Output Mode Resolution
 
 ```
-1. --output json    → ModeJSON  (explicit, default)
-2. --output human   → ModeHuman (explicit opt-in)
-3. --output auto    → TTY detection: terminal → ModeHuman, pipe → ModeJSON
-4. no --output flag → ModeJSON  (AX contract preserved)
+1. --format json    → ModeJSON  (explicit, default)
+2. --format human   → ModeHuman (explicit opt-in)
+3. --format auto    → TTY detection: terminal → ModeHuman, pipe → ModeJSON
+4. no --format flag → ModeJSON  (AX contract preserved)
 ```
 
-**Rationale:** JSON stays the default to preserve the AX contract documented in `docs/AX-CONTRACT.md`. Agents never need to pass `--output json` defensively. Humans opt in with `--output human` or `--output auto`. A shell alias (`alias wa='whatsapp-cli --output auto'`) gives humans the ergonomic default.
+**Rationale:** JSON stays the default to preserve the AX contract documented in `docs/AX-CONTRACT.md`. Agents never need to pass `--format json` defensively. Humans opt in with `--format human` or `--format auto`. A shell alias (`alias wa='whatsapp-cli --format auto'`) gives humans the ergonomic default.
 
-`--output` is a persistent flag on the root command, same level as `--store`.
+`--format` is a persistent flag on the root command, same level as `--store`. Named `--format` (not `--output`) to avoid collision with `media download --output` which specifies the destination file path.
 
-**TTY detection:** Uses `term.IsTerminal(int(os.Stdout.Fd()))` from `golang.org/x/term`. Only consulted when `--output auto` is set.
+**TTY detection:** Uses `term.IsTerminal(int(os.Stdout.Fd()))` from `golang.org/x/term`. Only consulted when `--format auto` is set.
 
 ## AX Contract Update
 
 When this ships, `docs/AX-CONTRACT.md` gains one line:
 
-> The `--output` flag controls stdout format. Default is `json`. Agents should not pass `--output` (or pass `--output json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
+> The `--format` flag controls stdout format. Default is `json`. Agents should not pass `--format` (or pass `--format json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
 
 ## printResult Changes
 

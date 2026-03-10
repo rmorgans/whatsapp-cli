@@ -125,7 +125,7 @@ Agents should ignore stderr unless debugging. All actionable data is on stdout.
 
 ## Output Format
 
-The `--output` flag controls stdout format. It is a persistent flag on the root command.
+The `--format` flag controls stdout format. It is a persistent flag on the root command.
 
 | Value | Behavior |
 |-------|----------|
@@ -133,7 +133,9 @@ The `--output` flag controls stdout format. It is a persistent flag on the root 
 | `human` | Human-readable formatted text. Tables for lists, key-value for objects, one-liners for mutations. |
 | `auto` | TTY detection: terminal → `human`, pipe → `json`. |
 
-Agents should not pass `--output` (or pass `--output json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
+Agents should not pass `--format` (or pass `--format json` explicitly). The `human` and `auto` modes are for interactive terminal use and are not part of the agent contract.
+
+Note: `--output` on `media download` is a separate flag for the destination file path — it is unrelated to `--format`.
 
 ## Flag Conventions
 

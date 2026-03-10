@@ -70,7 +70,7 @@ func TestOutputFlag_JSONProducesRawJSON(t *testing.T) {
 		return successEnvelope(data), nil
 	}
 
-	got, r := execCapture(t, spec, "test", "--output", "json")
+	got, r := execCapture(t, spec, "test", "--format", "json")
 	assert.Equal(t, 0, r.exitCode)
 	assert.Equal(t, successEnvelope(data)+"\n", got)
 }
@@ -88,7 +88,7 @@ func TestOutputFlag_HumanFormatsOutput(t *testing.T) {
 		return successEnvelope(data), nil
 	}
 
-	got, r := execCapture(t, spec, "test", "--output", "human")
+	got, r := execCapture(t, spec, "test", "--format", "human")
 	assert.Equal(t, 0, r.exitCode)
 	// GenericFormat for a single object renders key-value pairs.
 	assert.Contains(t, got, "Greeting")
@@ -107,7 +107,7 @@ func TestOutputFlag_AutoNonTTYProducesJSON(t *testing.T) {
 	spec.Exec = Local()
 	expected := `{"success":true,"data":null,"error":null}`
 
-	got, r := execCapture(t, spec, "test", "--output", "auto")
+	got, r := execCapture(t, spec, "test", "--format", "auto")
 	assert.Equal(t, 0, r.exitCode)
 	assert.Equal(t, expected+"\n", got, "auto mode with non-TTY writer should produce JSON")
 }
@@ -125,7 +125,7 @@ func TestOutputFlag_InvalidValueReturnsError(t *testing.T) {
 	spec.Exec = Local()
 	r.Register(spec)
 
-	r.Root().SetArgs([]string{"test", "--output", "badvalue"})
+	r.Root().SetArgs([]string{"test", "--format", "badvalue"})
 	err := r.Root().Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be one of")
@@ -145,7 +145,7 @@ func TestOutputFlag_HumanFallsBackToGenericFormatter(t *testing.T) {
 		return successEnvelope(data), nil
 	}
 
-	got, r := execCapture(t, spec, "fancy", "--output", "human")
+	got, r := execCapture(t, spec, "fancy", "--format", "human")
 	assert.Equal(t, 0, r.exitCode)
 	// GenericFormat renders key-value pair.
 	assert.Contains(t, got, "Key")
@@ -164,7 +164,7 @@ func TestOutputFlag_HumanErrorEnvelope(t *testing.T) {
 		return "", fmt.Errorf("something broke")
 	}
 
-	got, r := execCapture(t, spec, "test", "--output", "human")
+	got, r := execCapture(t, spec, "test", "--format", "human")
 	assert.Equal(t, 1, r.exitCode)
 	assert.Contains(t, got, "Error: something broke")
 }
@@ -200,7 +200,7 @@ func TestOutputFlag_HumanFallsThroughToRawJSON(t *testing.T) {
 	r := NewRegistry()
 	var buf bytes.Buffer
 	r.SetWriter(&buf)
-	r.outputFlag = "human"
+	r.formatFlag = "human"
 	r.printResult("test-cmd", "this is not json")
 	assert.Equal(t, 1, r.exitCode)
 	assert.Equal(t, "this is not json\n", buf.String())
@@ -221,7 +221,7 @@ func TestOutputFlag_JSONByteIdentical(t *testing.T) {
 		return envelope, nil
 	}
 
-	got, _ := execCapture(t, spec, "test", "--output", "json")
+	got, _ := execCapture(t, spec, "test", "--format", "json")
 	assert.Equal(t, envelope+"\n", got)
 }
 
@@ -242,7 +242,7 @@ func TestOutputFlag_HumanUsesPerCommandFormatter(t *testing.T) {
 		return successEnvelope(sendData), nil
 	}
 
-	got, r := execCapture(t, spec, "send", "--output", "human")
+	got, r := execCapture(t, spec, "send", "--format", "human")
 	assert.Equal(t, 0, r.exitCode)
 	assert.Contains(t, got, "Sent to someone@s.whatsapp.net")
 	assert.Contains(t, got, "msg123")
@@ -272,7 +272,7 @@ func TestOutputFlag_ExitCodes(t *testing.T) {
 					r := NewRegistry()
 					var buf bytes.Buffer
 					r.SetWriter(&buf)
-					r.outputFlag = mode
+					r.formatFlag = mode
 					r.printResult("test-cmd", tc.result)
 					assert.Equal(t, tc.wantCode, r.exitCode)
 				})
@@ -288,7 +288,7 @@ func TestOutputFlag_ExitCodes(t *testing.T) {
 func TestOutputFlag_PersistentFlagExists(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
-	f := r.Root().PersistentFlags().Lookup("output")
+	f := r.Root().PersistentFlags().Lookup("format")
 	require.NotNil(t, f)
 	assert.Equal(t, "json", f.DefValue)
 }
@@ -309,7 +309,7 @@ func TestOutputFlag_HumanArrayData(t *testing.T) {
 		return successEnvelope(data), nil
 	}
 
-	got, r := execCapture(t, spec, "list", "--output", "human")
+	got, r := execCapture(t, spec, "list", "--format", "human")
 	assert.Equal(t, 0, r.exitCode)
 	// Should contain table headers (generic formatter uppercases them).
 	assert.True(t, strings.Contains(got, "AGE") || strings.Contains(got, "NAME"),
