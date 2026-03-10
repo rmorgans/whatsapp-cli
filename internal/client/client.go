@@ -58,14 +58,14 @@ type MessageDetails struct {
 func NewWAClient(storeDir string) (*WAClient, error) {
 	// Create store directory
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create store directory: %v", err)
+		return nil, fmt.Errorf("failed to create store directory: %w", err)
 	}
 
 	dbLog := waLog.Stdout("Database", "ERROR", true)
 	ctx := context.Background()
 	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s/whatsapp.db?_foreign_keys=on", storeDir), dbLog)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %v", err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	deviceStore, err := container.GetFirstDevice(ctx)
@@ -73,7 +73,7 @@ func NewWAClient(storeDir string) (*WAClient, error) {
 		if err == sql.ErrNoRows {
 			deviceStore = container.NewDevice()
 		} else {
-			return nil, fmt.Errorf("failed to get device: %v", err)
+			return nil, fmt.Errorf("failed to get device: %w", err)
 		}
 	}
 
@@ -107,7 +107,7 @@ func (w *WAClient) Authenticate(ctx context.Context) error {
 
 	qrChan, _ := w.client.GetQRChannel(ctx)
 	if err := w.client.Connect(); err != nil {
-		return fmt.Errorf("failed to connect: %v", err)
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 
 	for evt := range qrChan {
@@ -133,7 +133,7 @@ func (w *WAClient) Connect(ctx context.Context) error {
 	}
 
 	if err := w.client.Connect(); err != nil {
-		return fmt.Errorf("failed to connect: %v", err)
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 
 	return nil

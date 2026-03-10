@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	r "github.com/vicentereig/whatsapp-cli/cmd/registry"
@@ -25,9 +24,8 @@ func registerAll(reg *r.Registry) {
 	// version — local exec, no app init
 	// -----------------------------------------------------------------
 	ver := r.MustNewLeafSpec("version", r.MustNewPath("version"),
-		func(_ context.Context, _ *commands.App, _ r.FlagValues) (string, error) {
-			escaped, _ := json.Marshal(reg.Version())
-			return fmt.Sprintf(`{"success":true,"data":{"version":%s},"error":null}`, escaped), nil
+		func(_ context.Context, _ *commands.App, _ r.FlagValues) (any, error) {
+			return map[string]string{"version": reg.Version()}, nil
 		},
 	)
 	ver.Doc = r.DocSpec{Short: "Print CLI version information"}
@@ -38,8 +36,8 @@ func registerAll(reg *r.Registry) {
 	// auth — bounded
 	// -----------------------------------------------------------------
 	auth := r.MustNewLeafSpec("auth", r.MustNewPath("auth"),
-		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
-			return app.Auth(ctx), nil
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (any, error) {
+			return app.Auth(ctx)
 		},
 	)
 	auth.Doc = r.DocSpec{Short: "Authenticate with WhatsApp (scan QR code)"}
@@ -50,8 +48,8 @@ func registerAll(reg *r.Registry) {
 	// sync — streaming
 	// -----------------------------------------------------------------
 	sync := r.MustNewLeafSpec("sync", r.MustNewPath("sync"),
-		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
-			return app.Sync(ctx), nil
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (any, error) {
+			return app.Sync(ctx)
 		},
 	)
 	sync.Doc = r.DocSpec{Short: "Sync messages continuously (run until Ctrl+C)"}
@@ -62,7 +60,7 @@ func registerAll(reg *r.Registry) {
 	// send — bounded, with mutual exclusion (message XOR image)
 	// -----------------------------------------------------------------
 	send := r.MustNewLeafSpec("send", r.MustNewPath("send"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
 			to := f.String("to")
 			replyTo := ""
 			if f.IsSet("reply-to") {
@@ -71,29 +69,29 @@ func registerAll(reg *r.Registry) {
 			switch {
 			case f.IsSet("image"):
 				if replyTo != "" {
-					return "", fmt.Errorf("--reply-to is only supported with text messages")
+					return nil, fmt.Errorf("--reply-to is only supported with text messages")
 				}
-				return app.SendImage(ctx, to, f.String("image"), f.String("caption")), nil
+				return app.SendImage(ctx, to, f.String("image"), f.String("caption"))
 			case f.IsSet("video"):
 				if replyTo != "" {
-					return "", fmt.Errorf("--reply-to is only supported with text messages")
+					return nil, fmt.Errorf("--reply-to is only supported with text messages")
 				}
-				return app.SendVideo(ctx, to, f.String("video"), f.String("caption")), nil
+				return app.SendVideo(ctx, to, f.String("video"), f.String("caption"))
 			case f.IsSet("audio"):
 				if replyTo != "" {
-					return "", fmt.Errorf("--reply-to is only supported with text messages")
+					return nil, fmt.Errorf("--reply-to is only supported with text messages")
 				}
-				return app.SendAudio(ctx, to, f.String("audio"), f.Bool("ptt")), nil
+				return app.SendAudio(ctx, to, f.String("audio"), f.Bool("ptt"))
 			case f.IsSet("document"):
 				if replyTo != "" {
-					return "", fmt.Errorf("--reply-to is only supported with text messages")
+					return nil, fmt.Errorf("--reply-to is only supported with text messages")
 				}
-				return app.SendDocument(ctx, to, f.String("document"), f.String("filename")), nil
+				return app.SendDocument(ctx, to, f.String("document"), f.String("filename"))
 			default:
 				if replyTo != "" {
-					return app.SendReply(ctx, to, f.String("message"), replyTo), nil
+					return app.SendReply(ctx, to, f.String("message"), replyTo)
 				}
-				return app.SendMessage(ctx, to, f.String("message")), nil
+				return app.SendMessage(ctx, to, f.String("message"))
 			}
 		},
 	)
@@ -151,8 +149,8 @@ func registerAll(reg *r.Registry) {
 
 	// messages list
 	msgList := r.MustNewLeafSpec("messages.list", r.MustNewPath("messages", "list"),
-		func(_ context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.ListMessages(optStr(f, "chat"), nil, f.Int("limit"), f.Int("page")), nil
+		func(_ context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.ListMessages(optStr(f, "chat"), nil, f.Int("limit"), f.Int("page"))
 		},
 	)
 	msgList.Doc = r.DocSpec{Short: "List messages in a chat"}
@@ -166,9 +164,9 @@ func registerAll(reg *r.Registry) {
 
 	// messages search
 	msgSearch := r.MustNewLeafSpec("messages.search", r.MustNewPath("messages", "search"),
-		func(_ context.Context, app *commands.App, f r.FlagValues) (string, error) {
+		func(_ context.Context, app *commands.App, f r.FlagValues) (any, error) {
 			query := f.String("query")
-			return app.ListMessages(nil, &query, f.Int("limit"), f.Int("page")), nil
+			return app.ListMessages(nil, &query, f.Int("limit"), f.Int("page"))
 		},
 	)
 	msgSearch.Doc = r.DocSpec{Short: "Search messages by text"}
@@ -182,8 +180,8 @@ func registerAll(reg *r.Registry) {
 
 	// messages react
 	react := r.MustNewLeafSpec("messages.react", r.MustNewPath("messages", "react"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.ReactToMessage(ctx, f.String("message-id"), f.String("emoji"), optStr(f, "chat")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.ReactToMessage(ctx, f.String("message-id"), f.String("emoji"), optStr(f, "chat"))
 		},
 	)
 	react.Doc = r.DocSpec{Short: "React to a message with an emoji"}
@@ -197,8 +195,8 @@ func registerAll(reg *r.Registry) {
 
 	// messages delete
 	msgDelete := r.MustNewLeafSpec("messages.delete", r.MustNewPath("messages", "delete"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.DeleteMessage(ctx, f.String("message-id"), optStr(f, "chat")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.DeleteMessage(ctx, f.String("message-id"), optStr(f, "chat"))
 		},
 	)
 	msgDelete.Doc = r.DocSpec{Short: "Delete (revoke) a message"}
@@ -211,8 +209,8 @@ func registerAll(reg *r.Registry) {
 
 	// messages edit
 	msgEdit := r.MustNewLeafSpec("messages.edit", r.MustNewPath("messages", "edit"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.EditMessage(ctx, f.String("message-id"), f.String("text"), optStr(f, "chat")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.EditMessage(ctx, f.String("message-id"), f.String("text"), optStr(f, "chat"))
 		},
 	)
 	msgEdit.Doc = r.DocSpec{Short: "Edit a message"}
@@ -226,8 +224,8 @@ func registerAll(reg *r.Registry) {
 
 	// messages mark-read
 	msgMarkRead := r.MustNewLeafSpec("messages.mark-read", r.MustNewPath("messages", "mark-read"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.MarkMessageRead(ctx, f.String("message-id"), optStr(f, "chat")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.MarkMessageRead(ctx, f.String("message-id"), optStr(f, "chat"))
 		},
 	)
 	msgMarkRead.Doc = r.DocSpec{Short: "Mark a message as read"}
@@ -248,8 +246,8 @@ func registerAll(reg *r.Registry) {
 
 	// contacts search
 	ctSearch := r.MustNewLeafSpec("contacts.search", r.MustNewPath("contacts", "search"),
-		func(_ context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.SearchContacts(f.String("query")), nil
+		func(_ context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.SearchContacts(f.String("query"))
 		},
 	)
 	ctSearch.Doc = r.DocSpec{Short: "Search contacts by name"}
@@ -261,8 +259,8 @@ func registerAll(reg *r.Registry) {
 
 	// contacts block
 	ctBlock := r.MustNewLeafSpec("contacts.block", r.MustNewPath("contacts", "block"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.BlockContact(ctx, f.String("jid")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.BlockContact(ctx, f.String("jid"))
 		},
 	)
 	ctBlock.Doc = r.DocSpec{Short: "Block a contact"}
@@ -274,8 +272,8 @@ func registerAll(reg *r.Registry) {
 
 	// contacts unblock
 	ctUnblock := r.MustNewLeafSpec("contacts.unblock", r.MustNewPath("contacts", "unblock"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.UnblockContact(ctx, f.String("jid")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.UnblockContact(ctx, f.String("jid"))
 		},
 	)
 	ctUnblock.Doc = r.DocSpec{Short: "Unblock a contact"}
@@ -287,8 +285,8 @@ func registerAll(reg *r.Registry) {
 
 	// contacts list-blocked
 	ctListBlocked := r.MustNewLeafSpec("contacts.list-blocked", r.MustNewPath("contacts", "list-blocked"),
-		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
-			return app.ListBlocked(ctx), nil
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (any, error) {
+			return app.ListBlocked(ctx)
 		},
 	)
 	ctListBlocked.Doc = r.DocSpec{Short: "List blocked contacts"}
@@ -297,8 +295,8 @@ func registerAll(reg *r.Registry) {
 
 	// contacts check
 	ctCheck := r.MustNewLeafSpec("contacts.check", r.MustNewPath("contacts", "check"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.CheckOnWhatsApp(ctx, f.StringSlice("phone")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.CheckOnWhatsApp(ctx, f.StringSlice("phone"))
 		},
 	)
 	ctCheck.Doc = r.DocSpec{Short: "Check if phone numbers are on WhatsApp"}
@@ -318,8 +316,8 @@ func registerAll(reg *r.Registry) {
 
 	// chats list
 	chatsList := r.MustNewLeafSpec("chats.list", r.MustNewPath("chats", "list"),
-		func(_ context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.ListChats(optStr(f, "query"), f.Int("limit"), f.Int("page")), nil
+		func(_ context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.ListChats(optStr(f, "query"), f.Int("limit"), f.Int("page"))
 		},
 	)
 	chatsList.Doc = r.DocSpec{Short: "List recent chats"}
@@ -341,8 +339,8 @@ func registerAll(reg *r.Registry) {
 
 	// media download
 	mediaDl := r.MustNewLeafSpec("media.download", r.MustNewPath("media", "download"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.DownloadMedia(ctx, f.String("message-id"), optStr(f, "chat"), f.String("output")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.DownloadMedia(ctx, f.String("message-id"), optStr(f, "chat"), f.String("output"))
 		},
 	)
 	mediaDl.Doc = r.DocSpec{Short: "Download media for a message"}
@@ -364,8 +362,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups list
 	grpList := r.MustNewLeafSpec("groups.list", r.MustNewPath("groups", "list"),
-		func(ctx context.Context, app *commands.App, _ r.FlagValues) (string, error) {
-			return app.GroupsList(ctx), nil
+		func(ctx context.Context, app *commands.App, _ r.FlagValues) (any, error) {
+			return app.GroupsList(ctx)
 		},
 	)
 	grpList.Doc = r.DocSpec{Short: "List joined groups"}
@@ -374,8 +372,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups info
 	grpInfo := r.MustNewLeafSpec("groups.info", r.MustNewPath("groups", "info"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsInfo(ctx, f.String("jid")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsInfo(ctx, f.String("jid"))
 		},
 	)
 	grpInfo.Doc = r.DocSpec{Short: "Get group info"}
@@ -387,8 +385,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups create
 	grpCreate := r.MustNewLeafSpec("groups.create", r.MustNewPath("groups", "create"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsCreate(ctx, f.String("name"), f.StringSlice("members")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsCreate(ctx, f.String("name"), f.StringSlice("members"))
 		},
 	)
 	grpCreate.Doc = r.DocSpec{Short: "Create a new group"}
@@ -401,8 +399,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups invite-link
 	grpInviteLink := r.MustNewLeafSpec("groups.invite-link", r.MustNewPath("groups", "invite-link"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsInviteLink(ctx, f.String("jid"), f.Bool("reset")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsInviteLink(ctx, f.String("jid"), f.Bool("reset"))
 		},
 	)
 	grpInviteLink.Doc = r.DocSpec{Short: "Get or reset group invite link"}
@@ -415,8 +413,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups join
 	grpJoin := r.MustNewLeafSpec("groups.join", r.MustNewPath("groups", "join"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsJoin(ctx, f.String("link")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsJoin(ctx, f.String("link"))
 		},
 	)
 	grpJoin.Doc = r.DocSpec{Short: "Join a group via invite link"}
@@ -428,8 +426,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups leave
 	grpLeave := r.MustNewLeafSpec("groups.leave", r.MustNewPath("groups", "leave"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsLeave(ctx, f.String("jid")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsLeave(ctx, f.String("jid"))
 		},
 	)
 	grpLeave.Doc = r.DocSpec{Short: "Leave a group"}
@@ -441,8 +439,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups add-members
 	grpAddMembers := r.MustNewLeafSpec("groups.add-members", r.MustNewPath("groups", "add-members"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsAddMembers(ctx, f.String("jid"), f.StringSlice("members")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsAddMembers(ctx, f.String("jid"), f.StringSlice("members"))
 		},
 	)
 	grpAddMembers.Doc = r.DocSpec{Short: "Add members to a group"}
@@ -455,8 +453,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups remove-members
 	grpRemoveMembers := r.MustNewLeafSpec("groups.remove-members", r.MustNewPath("groups", "remove-members"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsRemoveMembers(ctx, f.String("jid"), f.StringSlice("members")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsRemoveMembers(ctx, f.String("jid"), f.StringSlice("members"))
 		},
 	)
 	grpRemoveMembers.Doc = r.DocSpec{Short: "Remove members from a group"}
@@ -469,8 +467,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups set-name
 	grpSetName := r.MustNewLeafSpec("groups.set-name", r.MustNewPath("groups", "set-name"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsSetName(ctx, f.String("jid"), f.String("name")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsSetName(ctx, f.String("jid"), f.String("name"))
 		},
 	)
 	grpSetName.Doc = r.DocSpec{Short: "Set group name"}
@@ -483,8 +481,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups set-description
 	grpSetDesc := r.MustNewLeafSpec("groups.set-description", r.MustNewPath("groups", "set-description"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsSetDescription(ctx, f.String("jid"), f.String("description")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsSetDescription(ctx, f.String("jid"), f.String("description"))
 		},
 	)
 	grpSetDesc.Doc = r.DocSpec{Short: "Set group description"}
@@ -497,8 +495,8 @@ func registerAll(reg *r.Registry) {
 
 	// groups set-photo
 	grpSetPhoto := r.MustNewLeafSpec("groups.set-photo", r.MustNewPath("groups", "set-photo"),
-		func(ctx context.Context, app *commands.App, f r.FlagValues) (string, error) {
-			return app.GroupsSetPhoto(ctx, f.String("jid"), f.String("image")), nil
+		func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+			return app.GroupsSetPhoto(ctx, f.String("jid"), f.String("image"))
 		},
 	)
 	grpSetPhoto.Doc = r.DocSpec{Short: "Set group photo (JPEG)"}

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/vicentereig/whatsapp-cli/internal/client"
-	"github.com/vicentereig/whatsapp-cli/internal/output"
 	"github.com/vicentereig/whatsapp-cli/internal/store"
 	"github.com/vicentereig/whatsapp-cli/internal/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -76,25 +75,19 @@ func (a *App) Close() {
 	}
 }
 
-func (a *App) Auth(ctx context.Context) string {
+func (a *App) Auth(ctx context.Context) (AuthResult, error) {
 	if a.client.IsAuthenticated() {
-		return output.Success(map[string]interface{}{
-			"authenticated": true,
-			"message":       "Already authenticated",
-		})
+		return AuthResult{Authenticated: true, Message: "Already authenticated"}, nil
 	}
 
 	if err := a.client.Authenticate(ctx); err != nil {
-		return output.Error(err)
+		return AuthResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"authenticated": true,
-		"message":       "Successfully authenticated",
-	})
+	return AuthResult{Authenticated: true, Message: "Successfully authenticated"}, nil
 }
 
-func (a *App) ListMessages(chatJID *string, query *string, limit, page int) string {
+func (a *App) ListMessages(chatJID *string, query *string, limit, page int) ([]store.Message, error) {
 	messages, err := a.store.ListMessages(store.ListMessagesParams{
 		ChatJID: chatJID,
 		Query:   query,
@@ -102,32 +95,41 @@ func (a *App) ListMessages(chatJID *string, query *string, limit, page int) stri
 		Page:    page,
 	})
 	if err != nil {
-		return output.Error(err)
+		return nil, err
+	}
+	if messages == nil {
+		messages = []store.Message{}
 	}
 
-	return output.Success(messages)
+	return messages, nil
 }
 
-func (a *App) SearchContacts(query string) string {
+func (a *App) SearchContacts(query string) ([]store.Contact, error) {
 	contacts, err := a.store.SearchContacts(query)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
+	}
+	if contacts == nil {
+		contacts = []store.Contact{}
 	}
 
-	return output.Success(contacts)
+	return contacts, nil
 }
 
-func (a *App) ListChats(query *string, limit, page int) string {
+func (a *App) ListChats(query *string, limit, page int) ([]store.Chat, error) {
 	chats, err := a.store.ListChats(store.ListChatsParams{
 		Query: query,
 		Limit: limit,
 		Page:  page,
 	})
 	if err != nil {
-		return output.Error(err)
+		return nil, err
+	}
+	if chats == nil {
+		chats = []store.Chat{}
 	}
 
-	return output.Success(chats)
+	return chats, nil
 }
 
 // recipientToJID normalizes a recipient string to a full JID.
@@ -147,14 +149,14 @@ func (a *App) ownSender() string {
 	return "me"
 }
 
-func (a *App) SendMessage(ctx context.Context, recipient, message string) string {
+func (a *App) SendMessage(ctx context.Context, recipient, message string) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	msgID, err := a.client.SendMessage(ctx, recipient, message)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -166,7 +168,7 @@ func (a *App) SendMessage(ctx context.Context, recipient, message string) string
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -176,20 +178,15 @@ func (a *App) SendMessage(ctx context.Context, recipient, message string) string
 		Timestamp: timestamp,
 		IsFromMe:  true,
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"message":   message,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Message: message}, nil
 }
 
-func (a *App) SendReply(ctx context.Context, recipient, message, replyToID string) string {
+func (a *App) SendReply(ctx context.Context, recipient, message, replyToID string) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	// Look up the original message scoped to the destination chat so we don't
@@ -197,7 +194,7 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 	chatJID := recipientToJID(recipient)
 	meta, err := a.store.GetMessageMetadata(replyToID, &chatJID)
 	if err != nil {
-		return output.Error(fmt.Errorf("looking up reply-to message %s: %w", replyToID, err))
+		return SendResult{}, fmt.Errorf("looking up reply-to message %s: %w", replyToID, err)
 	}
 
 	// The Participant field in ContextInfo needs a full JID.
@@ -205,7 +202,7 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 
 	msgID, err := a.client.SendTextReply(ctx, recipient, message, replyToID, senderJID)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -216,7 +213,7 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -226,129 +223,105 @@ func (a *App) SendReply(ctx context.Context, recipient, message, replyToID strin
 		Timestamp: timestamp,
 		IsFromMe:  true,
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"message":   message,
-		"reply_to":  replyToID,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Message: message, ReplyTo: replyToID}, nil
 }
 
-func (a *App) ReactToMessage(ctx context.Context, messageID, emoji string, chatJID *string) string {
+func (a *App) ReactToMessage(ctx context.Context, messageID, emoji string, chatJID *string) (ReactResult, error) {
 	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return output.Error(fmt.Errorf("message %s not found", messageID))
+			return ReactResult{}, fmt.Errorf("message %s not found", messageID)
 		}
-		return output.Error(err)
+		return ReactResult{}, err
 	}
 
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return ReactResult{}, err
 	}
 
 	if err := a.client.ReactToMessage(ctx, meta.ChatJID, recipientToJID(meta.Sender), messageID, emoji); err != nil {
-		return output.Error(err)
+		return ReactResult{}, err
 	}
 
-	result := map[string]interface{}{
-		"reacted":    true,
-		"message_id": messageID,
-		"chat_jid":   meta.ChatJID,
-		"emoji":      emoji,
-	}
+	result := ReactResult{Reacted: true, MessageID: messageID, ChatJID: meta.ChatJID, Emoji: emoji}
 	if emoji == "" {
-		result["reacted"] = false
-		result["action"] = "removed"
+		result.Reacted = false
+		result.Action = "removed"
 	}
-	return output.Success(result)
+	return result, nil
 }
 
-func (a *App) DeleteMessage(ctx context.Context, messageID string, chatJID *string) string {
+func (a *App) DeleteMessage(ctx context.Context, messageID string, chatJID *string) (MessageActionResult, error) {
 	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return output.Error(fmt.Errorf("message %s not found", messageID))
+			return MessageActionResult{}, fmt.Errorf("message %s not found", messageID)
 		}
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.RevokeMessage(ctx, meta.ChatJID, recipientToJID(meta.Sender), messageID); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"deleted":    true,
-		"message_id": messageID,
-		"chat_jid":   meta.ChatJID,
-	})
+	return MessageActionResult{MessageID: messageID, ChatJID: meta.ChatJID, Deleted: true}, nil
 }
 
-func (a *App) EditMessage(ctx context.Context, messageID, newText string, chatJID *string) string {
+func (a *App) EditMessage(ctx context.Context, messageID, newText string, chatJID *string) (MessageActionResult, error) {
 	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return output.Error(fmt.Errorf("message %s not found", messageID))
+			return MessageActionResult{}, fmt.Errorf("message %s not found", messageID)
 		}
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.EditMessage(ctx, meta.ChatJID, messageID, newText); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"edited":     true,
-		"message_id": messageID,
-		"chat_jid":   meta.ChatJID,
-		"new_text":   newText,
-	})
+	return MessageActionResult{MessageID: messageID, ChatJID: meta.ChatJID, Edited: true, NewText: newText}, nil
 }
 
-func (a *App) MarkMessageRead(ctx context.Context, messageID string, chatJID *string) string {
+func (a *App) MarkMessageRead(ctx context.Context, messageID string, chatJID *string) (MessageActionResult, error) {
 	meta, err := a.store.GetMessageMetadata(messageID, chatJID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return output.Error(fmt.Errorf("message %s not found", messageID))
+			return MessageActionResult{}, fmt.Errorf("message %s not found", messageID)
 		}
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
 	if err := a.client.MarkRead(ctx, []string{messageID}, meta.Timestamp, meta.ChatJID, recipientToJID(meta.Sender)); err != nil {
-		return output.Error(err)
+		return MessageActionResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"marked_read": true,
-		"message_id":  messageID,
-		"chat_jid":    meta.ChatJID,
-	})
+	return MessageActionResult{MessageID: messageID, ChatJID: meta.ChatJID, MarkedRead: true}, nil
 }
 
-func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption string) string {
+func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption string) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	msgID, err := a.client.SendImageMessage(ctx, recipient, imagePath, caption)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -365,7 +338,7 @@ func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption strin
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -377,26 +350,20 @@ func (a *App) SendImage(ctx context.Context, recipient, imagePath, caption strin
 		MediaType: "image",
 		Filename:  filepath.Base(imagePath),
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"image":     imagePath,
-		"caption":   caption,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Image: imagePath, Caption: caption}, nil
 }
 
-func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption string) string {
+func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption string) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	msgID, err := a.client.SendVideoMessage(ctx, recipient, videoPath, caption)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -413,7 +380,7 @@ func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption strin
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -425,26 +392,20 @@ func (a *App) SendVideo(ctx context.Context, recipient, videoPath, caption strin
 		MediaType: "video",
 		Filename:  filepath.Base(videoPath),
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"video":     videoPath,
-		"caption":   caption,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Video: videoPath, Caption: caption}, nil
 }
 
-func (a *App) SendAudio(ctx context.Context, recipient, audioPath string, ptt bool) string {
+func (a *App) SendAudio(ctx context.Context, recipient, audioPath string, ptt bool) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	msgID, err := a.client.SendAudioMessage(ctx, recipient, audioPath, ptt)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -456,7 +417,7 @@ func (a *App) SendAudio(ctx context.Context, recipient, audioPath string, ptt bo
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -468,25 +429,20 @@ func (a *App) SendAudio(ctx context.Context, recipient, audioPath string, ptt bo
 		MediaType: "audio",
 		Filename:  filepath.Base(audioPath),
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"audio":     audioPath,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Audio: audioPath}, nil
 }
 
-func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename string) string {
+func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename string) (SendResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	msgID, err := a.client.SendDocumentMessage(ctx, recipient, docPath, filename)
 	if err != nil {
-		return output.Error(err)
+		return SendResult{}, err
 	}
 
 	timestamp := time.Now()
@@ -504,7 +460,7 @@ func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename str
 	}
 
 	if err := a.store.StoreChat(chatJID, chatName, timestamp); err != nil {
-		return output.Error(fmt.Errorf("storing chat: %w", err))
+		return SendResult{}, fmt.Errorf("storing chat: %w", err)
 	}
 	if err := a.store.StoreMessage(store.StoreMessageParams{
 		ID:        msgID,
@@ -516,54 +472,48 @@ func (a *App) SendDocument(ctx context.Context, recipient, docPath, filename str
 		MediaType: "document",
 		Filename:  displayName,
 	}); err != nil {
-		return output.Error(fmt.Errorf("storing message: %w", err))
+		return SendResult{}, fmt.Errorf("storing message: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"sent":      true,
-		"id":        msgID,
-		"recipient": recipient,
-		"document":  docPath,
-		"filename":  displayName,
-	})
+	return SendResult{Sent: true, ID: msgID, Recipient: recipient, Document: docPath, Filename: displayName}, nil
 }
 
-func (a *App) DownloadMedia(ctx context.Context, messageID string, chatJID *string, outputPath string) string {
+func (a *App) DownloadMedia(ctx context.Context, messageID string, chatJID *string, outputPath string) (MediaDownloadResult, error) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return output.Error(fmt.Errorf("message ID is required"))
+		return MediaDownloadResult{}, fmt.Errorf("message ID is required")
 	}
 
 	info, err := a.store.GetMessageForDownload(messageID, chatJID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return output.Error(fmt.Errorf("message %s not found", messageID))
+			return MediaDownloadResult{}, fmt.Errorf("message %s not found", messageID)
 		}
-		return output.Error(err)
+		return MediaDownloadResult{}, err
 	}
 
 	if strings.TrimSpace(info.MediaType) == "" || strings.TrimSpace(info.DirectPath) == "" || len(info.MediaKey) == 0 {
-		return output.Error(fmt.Errorf("message %s has no downloadable media", messageID))
+		return MediaDownloadResult{}, fmt.Errorf("message %s has no downloadable media", messageID)
 	}
 
 	targetPath, bytesWritten, downloadedAt, err := a.downloadMediaAndPersist(ctx, info, outputPath)
 	if err != nil {
-		return output.Error(err)
+		return MediaDownloadResult{}, err
 	}
 
-	response := map[string]interface{}{
-		"message_id":    messageID,
-		"chat_jid":      info.ChatJID,
-		"path":          targetPath,
-		"bytes":         bytesWritten,
-		"media_type":    info.MediaType,
-		"mime_type":     info.MimeType,
-		"downloaded_at": downloadedAt.Format(time.RFC3339Nano),
+	result := MediaDownloadResult{
+		MessageID:    messageID,
+		ChatJID:      info.ChatJID,
+		Path:         targetPath,
+		Bytes:        bytesWritten,
+		MediaType:    info.MediaType,
+		MimeType:     info.MimeType,
+		DownloadedAt: downloadedAt.Format(time.RFC3339Nano),
 	}
 	if info.ChatName != nil && *info.ChatName != "" {
-		response["chat_name"] = *info.ChatName
+		result.ChatName = *info.ChatName
 	}
-	return output.Success(response)
+	return result, nil
 }
 
 func (a *App) resolveOutputPath(info store.MessageDownloadInfo, requested string) (string, error) {
@@ -909,7 +859,7 @@ func (w *mediaDownloadWorker) Stop() {
 }
 
 // Sync connects to WhatsApp and continuously syncs messages to the database
-func (a *App) Sync(ctx context.Context) string {
+func (a *App) Sync(ctx context.Context) (SyncResult, error) {
 	var messageCount atomic.Int64
 
 	version := a.version
@@ -1137,7 +1087,7 @@ func (a *App) Sync(ctx context.Context) string {
 	// Start syncing
 	fmt.Fprintln(os.Stderr, "🚀 Starting WhatsApp sync...")
 	if err := a.client.StartSync(ctx, eventHandler); err != nil {
-		return output.Error(err)
+		return SyncResult{}, err
 	}
 
 	// Wait for context cancellation (Ctrl+C)
@@ -1146,10 +1096,7 @@ func (a *App) Sync(ctx context.Context) string {
 	total := messageCount.Load()
 	fmt.Fprintf(os.Stderr, "\n\n✓ Sync completed. Total messages synced: %d\n", total)
 
-	return output.Success(map[string]interface{}{
-		"synced":         true,
-		"messages_count": total,
-	})
+	return SyncResult{Synced: true, MessagesCount: total}, nil
 }
 
 // repairLIDIdentities scans stored messages and chats for unresolved LID

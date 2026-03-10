@@ -219,7 +219,7 @@ type FlagValues interface {
 
 // Runner is the function signature for command execution. It receives a
 // context, the application instance, and the resolved flag values.
-type Runner func(ctx context.Context, app *commands.App, f FlagValues) (string, error)
+type Runner func(ctx context.Context, app *commands.App, f FlagValues) (any, error)
 
 // ---------------------------------------------------------------------------
 // DocSpec

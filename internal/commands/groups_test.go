@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -22,13 +21,7 @@ func TestGroupsList_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsList(context.Background())
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var groups []types.GroupInfo
-	err := json.Unmarshal(resp.Data, &groups)
+	groups, err := app.GroupsList(context.Background())
 	require.NoError(t, err)
 	require.Len(t, groups, 2)
 	require.Equal(t, "Family", groups[0].Name)
@@ -46,12 +39,9 @@ func TestGroupsList_Error(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsList(context.Background())
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "network error")
+	result, err := app.GroupsList(context.Background())
+	require.ErrorContains(t, err, "network error")
+	require.Nil(t, result)
 }
 
 func TestGroupsInfo_Success(t *testing.T) {
@@ -74,13 +64,7 @@ func TestGroupsInfo_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsInfo(context.Background(), "group1@g.us")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var info types.GroupInfo
-	err := json.Unmarshal(resp.Data, &info)
+	info, err := app.GroupsInfo(context.Background(), "group1@g.us")
 	require.NoError(t, err)
 	require.Equal(t, "Family", info.Name)
 	require.Equal(t, "Family group chat", info.Description)
@@ -106,13 +90,7 @@ func TestGroupsCreate_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsCreate(context.Background(), "Test Group", []string{"5511999999999", "5511888888888"})
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var info types.GroupInfo
-	err := json.Unmarshal(resp.Data, &info)
+	info, err := app.GroupsCreate(context.Background(), "Test Group", []string{"5511999999999", "5511888888888"})
 	require.NoError(t, err)
 	require.Equal(t, "newgroup@g.us", info.JID)
 	require.Equal(t, "Test Group", info.Name)
@@ -132,16 +110,10 @@ func TestGroupsInviteLink_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsInviteLink(context.Background(), "group1@g.us", false)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsInviteLink(context.Background(), "group1@g.us", false)
 	require.NoError(t, err)
-	require.Equal(t, "https://chat.whatsapp.com/ABC123", data["link"])
-	require.Equal(t, "group1@g.us", data["jid"])
+	require.Equal(t, "https://chat.whatsapp.com/ABC123", result.Link)
+	require.Equal(t, "group1@g.us", result.JID)
 }
 
 func TestGroupsJoin_Success(t *testing.T) {
@@ -154,16 +126,10 @@ func TestGroupsJoin_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsJoin(context.Background(), "https://chat.whatsapp.com/ABC123")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsJoin(context.Background(), "https://chat.whatsapp.com/ABC123")
 	require.NoError(t, err)
-	require.Equal(t, true, data["joined"])
-	require.Equal(t, "newgroup@g.us", data["jid"])
+	require.True(t, result.Joined)
+	require.Equal(t, "newgroup@g.us", result.JID)
 }
 
 func TestGroupsLeave_Success(t *testing.T) {
@@ -177,16 +143,10 @@ func TestGroupsLeave_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsLeave(context.Background(), "group1@g.us")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsLeave(context.Background(), "group1@g.us")
 	require.NoError(t, err)
-	require.Equal(t, true, data["left"])
-	require.Equal(t, "group1@g.us", data["jid"])
+	require.True(t, result.Left)
+	require.Equal(t, "group1@g.us", result.JID)
 	require.Equal(t, "group1@g.us", capturedJID)
 }
 
@@ -205,15 +165,9 @@ func TestGroupsAddMembers_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsAddMembers(context.Background(), "group1@g.us", []string{"5511999999999"})
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsAddMembers(context.Background(), "group1@g.us", []string{"5511999999999"})
 	require.NoError(t, err)
-	require.Equal(t, true, data["added"])
+	require.True(t, result.Added)
 
 	require.Equal(t, "group1@g.us", capturedJID)
 	require.Equal(t, []string{"5511999999999"}, capturedMembers)
@@ -232,11 +186,9 @@ func TestGroupsRemoveMembers_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsRemoveMembers(context.Background(), "group1@g.us", []string{"5511999999999"})
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
+	result, err := app.GroupsRemoveMembers(context.Background(), "group1@g.us", []string{"5511999999999"})
+	require.NoError(t, err)
+	require.True(t, result.Removed)
 	require.Equal(t, "remove", capturedAction)
 }
 
@@ -253,16 +205,10 @@ func TestGroupsSetName_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsSetName(context.Background(), "group1@g.us", "New Name")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsSetName(context.Background(), "group1@g.us", "New Name")
 	require.NoError(t, err)
-	require.Equal(t, true, data["updated"])
-	require.Equal(t, "New Name", data["name"])
+	require.True(t, result.Updated)
+	require.Equal(t, "New Name", result.Name)
 
 	require.Equal(t, "group1@g.us", capturedJID)
 	require.Equal(t, "New Name", capturedName)
@@ -281,16 +227,10 @@ func TestGroupsSetDescription_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsSetDescription(context.Background(), "group1@g.us", "New description")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsSetDescription(context.Background(), "group1@g.us", "New description")
 	require.NoError(t, err)
-	require.Equal(t, true, data["updated"])
-	require.Equal(t, "New description", data["description"])
+	require.True(t, result.Updated)
+	require.Equal(t, "New description", result.Description)
 
 	require.Equal(t, "group1@g.us", capturedJID)
 	require.Equal(t, "New description", capturedDesc)
@@ -309,16 +249,10 @@ func TestGroupsSetPhoto_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsSetPhoto(context.Background(), "group1@g.us", "/tmp/photo.jpg")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.GroupsSetPhoto(context.Background(), "group1@g.us", "/tmp/photo.jpg")
 	require.NoError(t, err)
-	require.Equal(t, true, data["updated"])
-	require.Equal(t, "group1@g.us", data["jid"])
+	require.True(t, result.Updated)
+	require.Equal(t, "group1@g.us", result.JID)
 
 	require.Equal(t, "group1@g.us", capturedJID)
 	require.Equal(t, "/tmp/photo.jpg", capturedPath)
@@ -333,12 +267,9 @@ func TestGroupsSetPhoto_Error(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.GroupsSetPhoto(context.Background(), "group1@g.us", "/tmp/bad.png")
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "invalid image format")
+	_, err := app.GroupsSetPhoto(context.Background(), "group1@g.us", "/tmp/bad.png")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid image format")
 }
 
 func TestGroupsConnectError(t *testing.T) {
@@ -350,30 +281,51 @@ func TestGroupsConnectError(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	// Every group command should fail with a connect error.
-	tests := []struct {
-		name string
-		fn   func() string
-	}{
-		{"list", func() string { return app.GroupsList(context.Background()) }},
-		{"info", func() string { return app.GroupsInfo(context.Background(), "g@g.us") }},
-		{"create", func() string { return app.GroupsCreate(context.Background(), "n", nil) }},
-		{"invite-link", func() string { return app.GroupsInviteLink(context.Background(), "g@g.us", false) }},
-		{"join", func() string { return app.GroupsJoin(context.Background(), "https://link") }},
-		{"leave", func() string { return app.GroupsLeave(context.Background(), "g@g.us") }},
-		{"add-members", func() string { return app.GroupsAddMembers(context.Background(), "g@g.us", []string{"m"}) }},
-		{"remove-members", func() string { return app.GroupsRemoveMembers(context.Background(), "g@g.us", []string{"m"}) }},
-		{"set-name", func() string { return app.GroupsSetName(context.Background(), "g@g.us", "n") }},
-		{"set-description", func() string { return app.GroupsSetDescription(context.Background(), "g@g.us", "d") }},
-		{"set-photo", func() string { return app.GroupsSetPhoto(context.Background(), "g@g.us", "/img") }},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp := parseResponse(t, tt.fn())
-			require.False(t, resp.Success)
-			require.NotNil(t, resp.Error)
-			require.Contains(t, *resp.Error, "connection refused")
-		})
-	}
+	t.Run("list", func(t *testing.T) {
+		result, err := app.GroupsList(context.Background())
+		require.ErrorContains(t, err, "connection refused")
+		require.Nil(t, result)
+	})
+	t.Run("info", func(t *testing.T) {
+		result, err := app.GroupsInfo(context.Background(), "g@g.us")
+		require.ErrorContains(t, err, "connection refused")
+		require.Nil(t, result)
+	})
+	t.Run("create", func(t *testing.T) {
+		result, err := app.GroupsCreate(context.Background(), "n", nil)
+		require.ErrorContains(t, err, "connection refused")
+		require.Nil(t, result)
+	})
+	t.Run("invite-link", func(t *testing.T) {
+		_, err := app.GroupsInviteLink(context.Background(), "g@g.us", false)
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("join", func(t *testing.T) {
+		_, err := app.GroupsJoin(context.Background(), "https://link")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("leave", func(t *testing.T) {
+		_, err := app.GroupsLeave(context.Background(), "g@g.us")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("add-members", func(t *testing.T) {
+		_, err := app.GroupsAddMembers(context.Background(), "g@g.us", []string{"m"})
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("remove-members", func(t *testing.T) {
+		_, err := app.GroupsRemoveMembers(context.Background(), "g@g.us", []string{"m"})
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("set-name", func(t *testing.T) {
+		_, err := app.GroupsSetName(context.Background(), "g@g.us", "n")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("set-description", func(t *testing.T) {
+		_, err := app.GroupsSetDescription(context.Background(), "g@g.us", "d")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("set-photo", func(t *testing.T) {
+		_, err := app.GroupsSetPhoto(context.Background(), "g@g.us", "/img")
+		require.ErrorContains(t, err, "connection refused")
+	})
 }

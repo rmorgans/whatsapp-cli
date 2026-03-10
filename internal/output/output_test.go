@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSuccess(t *testing.T) {
+func TestSuccessResult(t *testing.T) {
 	tests := []struct {
 		name string
-		data interface{}
+		data any
 		want string
 	}{
 		{
@@ -32,13 +32,15 @@ func TestSuccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Success(tt.data)
-			assert.JSONEq(t, tt.want, got)
+			r := SuccessResult(tt.data)
+			got, err := Marshal(r)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(got))
 		})
 	}
 }
 
-func TestError(t *testing.T) {
+func TestFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -53,8 +55,10 @@ func TestError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Error(tt.err)
-			assert.JSONEq(t, tt.want, got)
+			r := Failure(tt.err)
+			got, err := Marshal(r)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(got))
 		})
 	}
 }

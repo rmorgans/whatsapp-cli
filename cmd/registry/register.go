@@ -341,44 +341,44 @@ func (r *Registry) buildRunE(spec LeafSpec) func(*cobra.Command, []string) error
 		}
 
 		// Execute based on mode.
+		var (
+			result any
+			err    error
+		)
 		if spec.Exec.IsLocal() {
-			result, err := spec.Run(cmd.Context(), nil, fv)
-			if err != nil {
-				r.printResult(spec.ID, errorJSON(err.Error()))
+			result, err = spec.Run(cmd.Context(), nil, fv)
+		} else {
+			// Bounded or Streaming: needs app.
+			if initErr := r.initApp(); initErr != nil {
+				r.printResult(spec.ID, output.Failure(initErr))
 				return nil
 			}
-			r.printResult(spec.ID, result)
-			return nil
+			defer r.closeApp()
+
+			ctx, cancel := newContext(spec.Exec)
+			defer cancel()
+
+			result, err = spec.Run(ctx, r.app, fv)
 		}
 
-		// Bounded or Streaming: needs app.
-		if err := r.initApp(); err != nil {
-			r.printResult(spec.ID, errorJSON(err.Error()))
-			return nil
-		}
-		defer r.closeApp()
-
-		ctx, cancel := newContext(spec.Exec)
-		defer cancel()
-
-		result, err := spec.Run(ctx, r.app, fv)
 		if err != nil {
-			r.printResult(spec.ID, errorJSON(err.Error()))
+			r.printResult(spec.ID, output.Failure(err))
 			return nil
 		}
-		r.printResult(spec.ID, result)
+
+		r.printResult(spec.ID, r.toResult(result))
 		return nil
 	}
 }
 
-// ---------------------------------------------------------------------------
-// errorJSON
-// ---------------------------------------------------------------------------
-
-// errorJSON produces a properly-escaped JSON error envelope for stdout.
-func errorJSON(msg string) string {
-	escaped, _ := json.Marshal(msg)
-	return fmt.Sprintf(`{"success":false,"data":null,"error":%s}`, escaped)
+// toResult converts a Runner's return value to an output.Result.
+func (r *Registry) toResult(v any) output.Result {
+	switch val := v.(type) {
+	case output.Result:
+		return val
+	default:
+		return output.SuccessResult(val)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -404,43 +404,46 @@ func (r *Registry) resolveOutputMode() output.OutputMode {
 // printResult
 // ---------------------------------------------------------------------------
 
-func (r *Registry) printResult(commandID, result string) {
-	env, err := output.ParseEnvelope(result)
-	if err != nil {
-		// Parse failure: print raw result, exit 1.
-		fmt.Fprintln(r.writer, result)
-		r.exitCode = 1
-		return
-	}
-
-	// Derive exit code from envelope.
-	if !env.Success {
+func (r *Registry) printResult(commandID string, result output.Result) {
+	if !result.Success {
 		r.exitCode = 1
 	}
 
 	mode := r.resolveOutputMode()
 
-	if mode == output.ModeJSON {
-		fmt.Fprintln(r.writer, result)
-		return
+	if mode == output.ModeHuman {
+		// Build Envelope for human formatters.
+		rawData, marshalErr := json.Marshal(result.Data)
+		if marshalErr != nil {
+			fmt.Fprintf(os.Stderr, "⚠ marshal result data: %v\n", marshalErr)
+			r.exitCode = 1
+			return
+		}
+		env := output.Envelope{
+			Success: result.Success,
+			Data:    rawData,
+			Error:   result.Error,
+		}
+		if formatted, ok, err := output.FormatHuman(commandID, env); ok {
+			fmt.Fprintln(r.writer, formatted)
+			return
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ %v\n", err)
+		}
+		if formatted, err := output.GenericFormat(env); err == nil {
+			fmt.Fprintln(r.writer, formatted)
+			return
+		}
 	}
 
-	// ModeHuman: try per-command formatter first.
-	if formatted, ok, err := output.FormatHuman(commandID, env); ok {
-		fmt.Fprintln(r.writer, formatted)
-		return
-	} else if err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ %v\n", err)
-	}
-
-	// Try generic formatter.
-	if formatted, err := output.GenericFormat(env); err == nil {
-		fmt.Fprintln(r.writer, formatted)
+	// JSON mode (or human fallback): serialize once via output.Marshal.
+	b, marshalErr := output.Marshal(result)
+	if marshalErr != nil {
+		fmt.Fprintf(os.Stderr, "⚠ marshal result: %v\n", marshalErr)
+		r.exitCode = 1
 		return
 	}
-
-	// Last resort: raw JSON.
-	fmt.Fprintln(r.writer, result)
+	fmt.Fprintln(r.writer, string(b))
 }
 
 // ---------------------------------------------------------------------------
@@ -648,7 +651,8 @@ func validateEnums(fv FlagValues, flags []Flag) error {
 // exit 2 for cobra/usage errors, exit 1 for runtime errors.
 func (r *Registry) Execute() {
 	if err := r.root.Execute(); err != nil {
-		fmt.Fprintln(r.writer, errorJSON(err.Error()))
+		b, _ := output.Marshal(output.Failure(err))
+		fmt.Fprintln(r.writer, string(b))
 		os.Exit(2)
 	}
 	if r.exitCode != 0 {

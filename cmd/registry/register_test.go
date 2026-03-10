@@ -12,15 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vicentereig/whatsapp-cli/internal/commands"
+	"github.com/vicentereig/whatsapp-cli/internal/output"
 )
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-// nopRunner returns a successful JSON result without needing the app.
-func nopRunner(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-	return `{"success":true,"data":null,"error":null}`, nil
+// nopRunner returns nil data (serialized as {"success":true,"data":null,"error":null}).
+func nopRunner(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+	return nil, nil
 }
 
 // dummyLeaf creates a minimal LeafSpec for registration tests.
@@ -277,10 +278,10 @@ func TestEnsureParent_CreatesIntermediates(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// errorJSON
+// output.Failure + output.Marshal (replaces errorJSON tests)
 // ---------------------------------------------------------------------------
 
-func TestErrorJSON(t *testing.T) {
+func TestFailureMarshal(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
@@ -294,7 +295,9 @@ func TestErrorJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result := errorJSON(tc.msg)
+			result := output.Failure(fmt.Errorf("%s", tc.msg))
+			b, err := output.Marshal(result)
+			require.NoError(t, err, "output.Marshal must succeed")
 
 			// Must be valid JSON.
 			var envelope struct {
@@ -302,8 +305,8 @@ func TestErrorJSON(t *testing.T) {
 				Data    interface{} `json:"data"`
 				Error   string      `json:"error"`
 			}
-			err := json.Unmarshal([]byte(result), &envelope)
-			require.NoError(t, err, "errorJSON must produce valid JSON")
+			err = json.Unmarshal(b, &envelope)
+			require.NoError(t, err, "output.Marshal must produce valid JSON")
 			assert.False(t, envelope.Success)
 			assert.Nil(t, envelope.Data)
 			assert.Equal(t, tc.msg, envelope.Error)
@@ -317,21 +320,21 @@ func TestErrorJSON(t *testing.T) {
 
 func TestPrintResult_SetsExitCodeOnFailure(t *testing.T) {
 	t.Parallel()
+	errMsg := "boom"
 	tests := []struct {
 		name     string
-		json     string
+		result   output.Result
 		wantCode int
 	}{
-		{"success", `{"success":true,"data":{},"error":null}`, 0},
-		{"failure", `{"success":false,"data":null,"error":"boom"}`, 1},
-		{"invalid json", "not json at all", 1},
+		{"success", output.SuccessResult(map[string]any{}), 0},
+		{"failure", output.Result{Success: false, Error: &errMsg}, 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r := NewRegistry()
 			r.SetWriter(io.Discard)
-			r.printResult("test-cmd", tc.json)
+			r.printResult("test-cmd", tc.result)
 			assert.Equal(t, tc.wantCode, r.exitCode)
 		})
 	}
@@ -481,7 +484,7 @@ func TestBuildRunE_LocalModeNoApp(t *testing.T) {
 	var calledWithNilApp bool
 	spec := dummyLeaf("cmd1", "test")
 	spec.Exec = Local()
-	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (string, error) {
+	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (any, error) {
 		calledWithNilApp = app == nil
 		return `{"success":true,"data":null,"error":null}`, nil
 	}
@@ -638,8 +641,8 @@ func TestBuildRunE_RunnerError_SetExitCode(t *testing.T) {
 	r := NewRegistry()
 	spec := dummyLeaf("cmd1", "test")
 	spec.Exec = Local()
-	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (string, error) {
-		return "", fmt.Errorf("something failed")
+	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (any, error) {
+		return nil, fmt.Errorf("something failed")
 	}
 	r.Register(spec)
 
@@ -663,7 +666,7 @@ func TestIntegration_LocalCommand(t *testing.T) {
 	spec.Flags = []Flag{
 		StringFlag{Name: "name", Short: "n", Help: "Name to greet", Default: "world"},
 	}
-	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (string, error) {
+	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (any, error) {
 		name := f.String("name")
 		data, _ := json.Marshal(map[string]string{"greeting": "hello " + name})
 		return fmt.Sprintf(`{"success":true,"data":%s,"error":null}`, data), nil
@@ -843,7 +846,7 @@ func TestRegister_StringSliceFlagDefault(t *testing.T) {
 	spec.Flags = []Flag{
 		StringSliceFlag{Name: "tags", Default: []string{"a", "b"}},
 	}
-	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (string, error) {
+	spec.Run = func(ctx context.Context, app *commands.App, f FlagValues) (any, error) {
 		tags := f.StringSlice("tags")
 		return fmt.Sprintf(`{"success":true,"data":{"tags":"%s"},"error":null}`, strings.Join(tags, ",")), nil
 	}
@@ -854,3 +857,4 @@ func TestRegister_StringSliceFlagDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, r.exitCode)
 }
+

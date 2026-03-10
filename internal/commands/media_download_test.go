@@ -2,14 +2,12 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vicentereig/whatsapp-cli/internal/output"
 	"github.com/vicentereig/whatsapp-cli/internal/store"
 )
 
@@ -77,19 +75,12 @@ func TestDownloadMediaUsesMetadataAndReturnsJSON(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(tmpDir, "downloaded.jpg")
-	resJSON := app.DownloadMedia(context.Background(), "msg1", nil, outputPath)
+	mdr, err := app.DownloadMedia(context.Background(), "msg1", nil, outputPath)
+	require.NoError(t, err)
 
-	var res output.Result
-	require.NoError(t, json.Unmarshal([]byte(resJSON), &res))
-
-	assert.True(t, res.Success, "expected success JSON")
-	assert.Nil(t, res.Error)
-
-	dataMap, ok := res.Data.(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "msg1", dataMap["message_id"])
-	assert.Equal(t, outputPath, dataMap["path"])
-	assert.EqualValues(t, 1024, dataMap["bytes"])
+	assert.Equal(t, "msg1", mdr.MessageID)
+	assert.Equal(t, outputPath, mdr.Path)
+	assert.EqualValues(t, 1024, mdr.Bytes)
 
 	require.True(t, fake.called, "expected downloader to be invoked")
 	assert.Equal(t, "/media/direct/path", fake.request.DirectPath)
@@ -132,12 +123,7 @@ func TestDownloadMediaErrorsWhenMetadataMissing(t *testing.T) {
 		},
 	}
 
-	resJSON := app.DownloadMedia(context.Background(), "msg2", nil, "")
-
-	var res output.Result
-	require.NoError(t, json.Unmarshal([]byte(resJSON), &res))
-
-	assert.False(t, res.Success)
-	require.NotNil(t, res.Error)
-	assert.Contains(t, *res.Error, "no downloadable media")
+	_, err = app.DownloadMedia(context.Background(), "msg2", nil, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no downloadable media")
 }

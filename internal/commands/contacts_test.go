@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -23,16 +22,10 @@ func TestBlockContact_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.BlockContact(context.Background(), "5511999999999@s.whatsapp.net")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.BlockContact(context.Background(), "5511999999999@s.whatsapp.net")
 	require.NoError(t, err)
-	require.Equal(t, true, data["blocked"])
-	require.Equal(t, "5511999999999@s.whatsapp.net", data["jid"])
+	require.True(t, result.Blocked)
+	require.Equal(t, "5511999999999@s.whatsapp.net", result.JID)
 
 	require.Equal(t, "5511999999999@s.whatsapp.net", capturedJID)
 	require.Equal(t, "block", capturedAction)
@@ -47,12 +40,9 @@ func TestBlockContact_Error(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.BlockContact(context.Background(), "bad@s.whatsapp.net")
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "server error")
+	_, err := app.BlockContact(context.Background(), "bad@s.whatsapp.net")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "server error")
 }
 
 func TestUnblockContact_Success(t *testing.T) {
@@ -68,16 +58,10 @@ func TestUnblockContact_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.UnblockContact(context.Background(), "5511999999999@s.whatsapp.net")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.UnblockContact(context.Background(), "5511999999999@s.whatsapp.net")
 	require.NoError(t, err)
-	require.Equal(t, true, data["unblocked"])
-	require.Equal(t, "5511999999999@s.whatsapp.net", data["jid"])
+	require.True(t, result.Unblocked)
+	require.Equal(t, "5511999999999@s.whatsapp.net", result.JID)
 
 	require.Equal(t, "5511999999999@s.whatsapp.net", capturedJID)
 	require.Equal(t, "unblock", capturedAction)
@@ -95,13 +79,7 @@ func TestListBlocked_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.ListBlocked(context.Background())
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var jids []string
-	err := json.Unmarshal(resp.Data, &jids)
+	jids, err := app.ListBlocked(context.Background())
 	require.NoError(t, err)
 	require.Len(t, jids, 2)
 	require.Equal(t, "5511999999999@s.whatsapp.net", jids[0])
@@ -117,13 +95,7 @@ func TestListBlocked_Empty(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.ListBlocked(context.Background())
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var jids []string
-	err := json.Unmarshal(resp.Data, &jids)
+	jids, err := app.ListBlocked(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, jids)
 }
@@ -137,12 +109,9 @@ func TestListBlocked_Error(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.ListBlocked(context.Background())
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "network error")
+	result, err := app.ListBlocked(context.Background())
+	require.ErrorContains(t, err, "network error")
+	require.Nil(t, result)
 }
 
 func TestCheckOnWhatsApp_Success(t *testing.T) {
@@ -160,13 +129,7 @@ func TestCheckOnWhatsApp_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.CheckOnWhatsApp(context.Background(), []string{"+5511999999999", "+5511000000000"})
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var results []types.IsOnWhatsAppResponse
-	err := json.Unmarshal(resp.Data, &results)
+	results, err := app.CheckOnWhatsApp(context.Background(), []string{"+5511999999999", "+5511000000000"})
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	require.Equal(t, "+5511999999999", results[0].Query)
@@ -187,12 +150,9 @@ func TestCheckOnWhatsApp_Error(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	result := app.CheckOnWhatsApp(context.Background(), []string{"+5511999999999"})
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "rate limited")
+	result, err := app.CheckOnWhatsApp(context.Background(), []string{"+5511999999999"})
+	require.ErrorContains(t, err, "rate limited")
+	require.Nil(t, result)
 }
 
 func TestContactsConnectError(t *testing.T) {
@@ -204,22 +164,22 @@ func TestContactsConnectError(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
 
-	tests := []struct {
-		name string
-		fn   func() string
-	}{
-		{"block", func() string { return app.BlockContact(context.Background(), "j@s.whatsapp.net") }},
-		{"unblock", func() string { return app.UnblockContact(context.Background(), "j@s.whatsapp.net") }},
-		{"list-blocked", func() string { return app.ListBlocked(context.Background()) }},
-		{"check", func() string { return app.CheckOnWhatsApp(context.Background(), []string{"+1234"}) }},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp := parseResponse(t, tt.fn())
-			require.False(t, resp.Success)
-			require.NotNil(t, resp.Error)
-			require.Contains(t, *resp.Error, "connection refused")
-		})
-	}
+	t.Run("block", func(t *testing.T) {
+		_, err := app.BlockContact(context.Background(), "j@s.whatsapp.net")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("unblock", func(t *testing.T) {
+		_, err := app.UnblockContact(context.Background(), "j@s.whatsapp.net")
+		require.ErrorContains(t, err, "connection refused")
+	})
+	t.Run("list-blocked", func(t *testing.T) {
+		result, err := app.ListBlocked(context.Background())
+		require.ErrorContains(t, err, "connection refused")
+		require.Nil(t, result)
+	})
+	t.Run("check", func(t *testing.T) {
+		result, err := app.CheckOnWhatsApp(context.Background(), []string{"+1234"})
+		require.ErrorContains(t, err, "connection refused")
+		require.Nil(t, result)
+	})
 }

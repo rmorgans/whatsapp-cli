@@ -1777,45 +1777,76 @@ go test -run TestStoreMessage ./internal/store
 ### Code Structure
 
 ```
+cmd/
+├── commands.go              # Wires Runner functions to App methods
+└── registry/
+    ├── register.go          # Registry, buildRunE, printResult (transport layer)
+    └── types.go             # Runner, LeafSpec, Flag types
 internal/
 ├── client/
-│   └── client.go          # WhatsApp client wrapper
+│   └── client.go            # WhatsApp client wrapper
 ├── commands/
-│   └── commands.go        # CLI command implementations
+│   ├── commands.go          # App methods (typed returns)
+│   ├── results.go           # Per-command result types
+│   ├── contacts.go          # Contact commands
+│   ├── groups.go            # Group commands
+│   └── interfaces.go        # WAClient interface
 ├── output/
-│   ├── output.go          # JSON formatting
-│   └── output_test.go     # Output tests
+│   ├── output.go            # Result envelope, Marshal
+│   ├── human.go             # Per-command human formatters
+│   └── envelope.go          # Envelope type for formatter dispatch
 └── store/
-    ├── store.go           # Database operations
-    └── store_test.go      # Storage tests
+    ├── store.go             # Database operations
+    └── store_test.go        # Storage tests
 ```
 
 ### Adding New Commands
 
-1. **Define command in `internal/commands/commands.go`:**
+1. **Define a result type in `internal/commands/results.go`** (if the command returns structured data):
 ```go
-func (a *App) NewCommand(param string) string {
-    // Implementation
-    result := doSomething(param)
-    return output.Success(result)
+type MyResult struct {
+    ID   string `json:"id"`
+    Done bool   `json:"done"`
 }
 ```
 
-2. **Add routing in `main.go`:**
+2. **Add the App method in `internal/commands/`** — return a concrete type, not `any`:
 ```go
-case "newcommand":
-    cmdFlags := flag.NewFlagSet("newcommand", flag.ExitOnError)
-    param := cmdFlags.String("param", "", "description")
-    cmdFlags.Parse(args[1:])
-    result = app.NewCommand(*param)
-```
-
-3. **Write tests in `internal/commands/commands_test.go`:**
-```go
-func TestNewCommand(t *testing.T) {
-    // Test implementation
+func (a *App) MyCommand(ctx context.Context, param string) (MyResult, error) {
+    result, err := a.client.DoSomething(ctx, param)
+    if err != nil {
+        return MyResult{}, err
+    }
+    return MyResult{ID: result.ID, Done: true}, nil
 }
 ```
+
+3. **Register the command in `cmd/commands.go`:**
+```go
+spec := r.MustNewLeafSpec("my-command", r.MustNewPath("my-command"),
+    func(ctx context.Context, app *commands.App, f r.FlagValues) (any, error) {
+        return app.MyCommand(ctx, f.String("param"))
+    },
+)
+spec.Doc = r.DocSpec{Short: "Does something"}
+spec.Exec = r.Bounded(0)
+spec.Flags = []r.Flag{
+    r.StringFlag{Name: "param", Help: "the parameter", Required: true},
+}
+reg.Register(spec)
+```
+
+4. **Write tests in `internal/commands/`:**
+```go
+func TestMyCommand(t *testing.T) {
+    app := newTestApp(mockClient, mockStore)
+    result, err := app.MyCommand(ctx, "value")
+    require.NoError(t, err)
+    assert.Equal(t, "expected-id", result.ID)
+}
+```
+
+5. **(Optional) Add a human formatter** in `internal/output/human.go` if the default table/key-value output isn't sufficient.
 
 ### Testing Guide
 

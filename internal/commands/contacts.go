@@ -3,68 +3,61 @@ package commands
 import (
 	"context"
 
-	"github.com/vicentereig/whatsapp-cli/internal/output"
 	"github.com/vicentereig/whatsapp-cli/internal/types"
 )
 
-func (a *App) BlockContact(ctx context.Context, jid string) string {
+func (a *App) BlockContact(ctx context.Context, jid string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.UpdateBlocklist(ctx, jid, "block"); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"blocked": true,
-		"jid":     jid,
-	})
+	return JIDResult{JID: jid, Blocked: true}, nil
 }
 
-func (a *App) UnblockContact(ctx context.Context, jid string) string {
+func (a *App) UnblockContact(ctx context.Context, jid string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.UpdateBlocklist(ctx, jid, "unblock"); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"unblocked": true,
-		"jid":       jid,
-	})
+	return JIDResult{JID: jid, Unblocked: true}, nil
 }
 
-func (a *App) ListBlocked(ctx context.Context) string {
+func (a *App) ListBlocked(ctx context.Context) ([]string, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
 	jids, err := a.client.GetBlocklist(ctx)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 	if jids == nil {
 		jids = []string{}
 	}
 
-	return output.Success(jids)
+	return jids, nil
 }
 
-func (a *App) CheckOnWhatsApp(ctx context.Context, phones []string) string {
+func (a *App) CheckOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
 	results, err := a.client.IsOnWhatsApp(ctx, phones)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 	if results == nil {
 		results = []types.IsOnWhatsAppResponse{}
 	}
 
-	return output.Success(results)
+	return results, nil
 }

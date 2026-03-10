@@ -11,21 +11,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vicentereig/whatsapp-cli/internal/commands"
+	"github.com/vicentereig/whatsapp-cli/internal/output"
 )
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-// successEnvelope builds a JSON envelope with success=true and the given data.
-func successEnvelope(data interface{}) string {
+// expectedJSON builds the expected JSON envelope string for a given data value.
+func expectedJSON(data interface{}) string {
 	d, _ := json.Marshal(data)
 	return fmt.Sprintf(`{"success":true,"data":%s,"error":null}`, d)
 }
 
 // errorEnvelope builds a JSON envelope with success=false and the given error.
 func errorEnvelope(msg string) string {
-	return errorJSON(msg)
+	b, _ := output.Marshal(output.Failure(fmt.Errorf("%s", msg)))
+	return string(b)
 }
 
 // execCapture creates a registry with the given spec, runs root with args,
@@ -66,13 +68,13 @@ func TestOutputFlag_JSONProducesRawJSON(t *testing.T) {
 	data := map[string]string{"greeting": "hello"}
 	spec := dummyLeaf("test-cmd", "test")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return successEnvelope(data), nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return data, nil
 	}
 
 	got, r := execCapture(t, spec, "test", "--format", "json")
 	assert.Equal(t, 0, r.exitCode)
-	assert.Equal(t, successEnvelope(data)+"\n", got)
+	assert.Equal(t, expectedJSON(data)+"\n", got)
 }
 
 // ---------------------------------------------------------------------------
@@ -84,8 +86,8 @@ func TestOutputFlag_HumanFormatsOutput(t *testing.T) {
 	data := map[string]string{"greeting": "hello"}
 	spec := dummyLeaf("test-cmd", "test")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return successEnvelope(data), nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return data, nil
 	}
 
 	got, r := execCapture(t, spec, "test", "--format", "human")
@@ -141,8 +143,8 @@ func TestOutputFlag_HumanFallsBackToGenericFormatter(t *testing.T) {
 	data := map[string]string{"key": "value"}
 	spec := dummyLeaf("unknown-fancy-cmd", "fancy")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return successEnvelope(data), nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return data, nil
 	}
 
 	got, r := execCapture(t, spec, "fancy", "--format", "human")
@@ -160,8 +162,8 @@ func TestOutputFlag_HumanErrorEnvelope(t *testing.T) {
 	t.Parallel()
 	spec := dummyLeaf("test-cmd", "test")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return "", fmt.Errorf("something broke")
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return nil, fmt.Errorf("something broke")
 	}
 
 	got, r := execCapture(t, spec, "test", "--format", "human")
@@ -173,37 +175,21 @@ func TestOutputFlag_HumanErrorEnvelope(t *testing.T) {
 // Human mode falls through to raw JSON if both formatters fail
 // ---------------------------------------------------------------------------
 
-func TestOutputFlag_HumanFallsThroughToRawJSON(t *testing.T) {
+func TestOutputFlag_HumanFallsThroughToJSON(t *testing.T) {
 	t.Parallel()
-	// Construct a success envelope where Data is not valid for GenericFormat
-	// to fail. Actually, GenericFormat handles all shapes, so we need to think
-	// about this differently. GenericFormat only fails if json.Unmarshal on
-	// Data fails, which requires Data to be present but invalid JSON.
-	// Since ParseEnvelope already parses the full envelope, Data would be
-	// raw JSON that's valid at the envelope level but could fail in GenericFormat
-	// if it's e.g. a bare invalid token stored as RawMessage.
-	//
-	// In practice this is nearly impossible with well-formed envelopes.
-	// Test the code path by using a command ID with no custom formatter
-	// and invalid data that ParseEnvelope accepts but GenericFormat rejects.
-	//
-	// Actually, ParseEnvelope uses json.Unmarshal which validates the whole
-	// document. If Data is `"data": invalid`, the envelope parse fails first.
-	// So the only way to reach the raw-JSON fallback in human mode is if
-	// GenericFormat returns an error, which only happens on unmarshal failure
-	// of Data -- but Data is a json.RawMessage that was already validated.
-	//
-	// This means the raw-JSON fallback after GenericFormat is essentially
-	// dead code for well-formed inputs. We test the parse-failure path instead.
-
-	// Test parse failure path: non-JSON input goes to raw output + exit 1.
+	// With the typed Result API, printResult always receives a valid Result.
+	// When human formatters have no match and GenericFormat fails, it falls
+	// back to JSON serialisation. We test with a nil-data error result.
 	r := NewRegistry()
 	var buf bytes.Buffer
 	r.SetWriter(&buf)
 	r.formatFlag = "human"
-	r.printResult("test-cmd", "this is not json")
+	errMsg := "something broke"
+	r.printResult("test-cmd", output.Result{Success: false, Error: &errMsg})
 	assert.Equal(t, 1, r.exitCode)
-	assert.Equal(t, "this is not json\n", buf.String())
+	// Human mode for error envelopes should use GenericFormat which
+	// renders "Error: something broke".
+	assert.Contains(t, buf.String(), "Error: something broke")
 }
 
 // ---------------------------------------------------------------------------
@@ -212,17 +198,17 @@ func TestOutputFlag_HumanFallsThroughToRawJSON(t *testing.T) {
 
 func TestOutputFlag_JSONByteIdentical(t *testing.T) {
 	t.Parallel()
-	// Verify that JSON mode outputs the raw result string + newline,
-	// exactly as fmt.Println did before.
-	envelope := `{"success":true,"data":{"a":1},"error":null}`
+	// Verify that JSON mode outputs the expected envelope.
+	data := map[string]any{"a": 1}
 	spec := dummyLeaf("test-cmd", "test")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return envelope, nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return data, nil
 	}
 
 	got, _ := execCapture(t, spec, "test", "--format", "json")
-	assert.Equal(t, envelope+"\n", got)
+	// Parse both to compare structurally (key order may vary).
+	assert.JSONEq(t, expectedJSON(data), strings.TrimSpace(got))
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +224,8 @@ func TestOutputFlag_HumanUsesPerCommandFormatter(t *testing.T) {
 	}
 	spec := dummyLeaf("send", "send")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return successEnvelope(sendData), nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return sendData, nil
 	}
 
 	got, r := execCapture(t, spec, "send", "--format", "human")
@@ -254,14 +240,14 @@ func TestOutputFlag_HumanUsesPerCommandFormatter(t *testing.T) {
 
 func TestOutputFlag_ExitCodes(t *testing.T) {
 	t.Parallel()
+	errMsg := "boom"
 	tests := []struct {
 		name     string
-		result   string
+		result   output.Result
 		wantCode int
 	}{
-		{"success", `{"success":true,"data":null,"error":null}`, 0},
-		{"failure", `{"success":false,"data":null,"error":"boom"}`, 1},
-		{"parse failure", "not json", 1},
+		{"success", output.SuccessResult(nil), 0},
+		{"failure", output.Result{Success: false, Error: &errMsg}, 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -305,8 +291,8 @@ func TestOutputFlag_HumanArrayData(t *testing.T) {
 	}
 	spec := dummyLeaf("unknown-list-cmd", "list")
 	spec.Exec = Local()
-	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (string, error) {
-		return successEnvelope(data), nil
+	spec.Run = func(_ context.Context, _ *commands.App, _ FlagValues) (any, error) {
+		return data, nil
 	}
 
 	got, r := execCapture(t, spec, "list", "--format", "human")

@@ -4,174 +4,145 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vicentereig/whatsapp-cli/internal/output"
 	"github.com/vicentereig/whatsapp-cli/internal/types"
 )
 
-func (a *App) GroupsList(ctx context.Context) string {
+func (a *App) GroupsList(ctx context.Context) ([]types.GroupInfo, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
 	groups, err := a.client.GetJoinedGroups(ctx)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 	if groups == nil {
 		groups = []types.GroupInfo{}
 	}
 
-	return output.Success(groups)
+	return groups, nil
 }
 
-func (a *App) GroupsInfo(ctx context.Context, jid string) string {
+func (a *App) GroupsInfo(ctx context.Context, jid string) (*types.GroupInfo, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
 	info, err := a.client.GetGroupInfo(ctx, jid)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
-	return output.Success(info)
+	return info, nil
 }
 
-func (a *App) GroupsCreate(ctx context.Context, name string, members []string) string {
+func (a *App) GroupsCreate(ctx context.Context, name string, members []string) (*types.GroupInfo, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
 	info, err := a.client.CreateGroup(ctx, name, members)
 	if err != nil {
-		return output.Error(err)
+		return nil, err
 	}
 
-	return output.Success(info)
+	return info, nil
 }
 
-func (a *App) GroupsInviteLink(ctx context.Context, jid string, reset bool) string {
+func (a *App) GroupsInviteLink(ctx context.Context, jid string, reset bool) (InviteLinkResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return InviteLinkResult{}, err
 	}
 
 	link, err := a.client.GetGroupInviteLink(ctx, jid, reset)
 	if err != nil {
-		return output.Error(err)
+		return InviteLinkResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"jid":  jid,
-		"link": link,
-	})
+	return InviteLinkResult{JID: jid, Link: link}, nil
 }
 
-func (a *App) GroupsJoin(ctx context.Context, link string) string {
+func (a *App) GroupsJoin(ctx context.Context, link string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	jid, err := a.client.JoinGroupWithLink(ctx, link)
 	if err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"joined": true,
-		"jid":    jid,
-	})
+	return JIDResult{JID: jid, Joined: true}, nil
 }
 
-func (a *App) GroupsLeave(ctx context.Context, jid string) string {
+func (a *App) GroupsLeave(ctx context.Context, jid string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.LeaveGroup(ctx, jid); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"left": true,
-		"jid":  jid,
-	})
+	return JIDResult{JID: jid, Left: true}, nil
 }
 
-func (a *App) GroupsAddMembers(ctx context.Context, jid string, members []string) string {
+func (a *App) GroupsAddMembers(ctx context.Context, jid string, members []string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.UpdateGroupParticipants(ctx, jid, members, "add"); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"added":   true,
-		"jid":     jid,
-		"members": members,
-	})
+	return JIDResult{JID: jid, Added: true, Members: members}, nil
 }
 
-func (a *App) GroupsRemoveMembers(ctx context.Context, jid string, members []string) string {
+func (a *App) GroupsRemoveMembers(ctx context.Context, jid string, members []string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.UpdateGroupParticipants(ctx, jid, members, "remove"); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"removed": true,
-		"jid":     jid,
-		"members": members,
-	})
+	return JIDResult{JID: jid, Removed: true, Members: members}, nil
 }
 
-func (a *App) GroupsSetName(ctx context.Context, jid, name string) string {
+func (a *App) GroupsSetName(ctx context.Context, jid, name string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.SetGroupName(ctx, jid, name); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"updated": true,
-		"jid":     jid,
-		"name":    name,
-	})
+	return JIDResult{JID: jid, Updated: true, Name: name}, nil
 }
 
-func (a *App) GroupsSetDescription(ctx context.Context, jid, description string) string {
+func (a *App) GroupsSetDescription(ctx context.Context, jid, description string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.SetGroupDescription(ctx, jid, description); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
-	return output.Success(map[string]interface{}{
-		"updated":     true,
-		"jid":         jid,
-		"description": description,
-	})
+	return JIDResult{JID: jid, Updated: true, Description: description}, nil
 }
 
-func (a *App) GroupsSetPhoto(ctx context.Context, jid, imagePath string) string {
+func (a *App) GroupsSetPhoto(ctx context.Context, jid, imagePath string) (JIDResult, error) {
 	if err := a.client.Connect(ctx); err != nil {
-		return output.Error(err)
+		return JIDResult{}, err
 	}
 
 	if err := a.client.SetGroupPhoto(ctx, jid, imagePath); err != nil {
-		return output.Error(fmt.Errorf("setting group photo: %w", err))
+		return JIDResult{}, fmt.Errorf("setting group photo: %w", err)
 	}
 
-	return output.Success(map[string]interface{}{
-		"updated": true,
-		"jid":     jid,
-	})
+	return JIDResult{JID: jid, Updated: true}, nil
 }

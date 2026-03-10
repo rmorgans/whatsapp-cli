@@ -94,12 +94,12 @@ func NewMessageStore(dbPath string) (*MessageStore, error) {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %v", err)
+		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %v", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	// Create tables
@@ -134,7 +134,7 @@ func NewMessageStore(dbPath string) (*MessageStore, error) {
 	`)
 	if err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to create tables: %v", err)
+		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
 	if err := ensureMessageColumns(db); err != nil {

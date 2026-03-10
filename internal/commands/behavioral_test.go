@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -29,6 +30,84 @@ func parseResponse(t *testing.T, result string) Response {
 	err := json.Unmarshal([]byte(result), &resp)
 	require.NoError(t, err, "response should be valid JSON: %s", result)
 	return resp
+}
+
+// TestAuth_AlreadyAuthenticated verifies that Auth returns immediately when already authenticated.
+func TestAuth_AlreadyAuthenticated(t *testing.T) {
+	mockClient := &MockWAClient{
+		IsAuthenticatedFunc: func() bool { return true },
+	}
+
+	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
+
+	result, err := app.Auth(context.Background())
+	require.NoError(t, err)
+	require.True(t, result.Authenticated)
+	require.Equal(t, "Already authenticated", result.Message)
+}
+
+// TestAuth_SuccessfulAuthentication verifies that Auth authenticates and returns success.
+func TestAuth_SuccessfulAuthentication(t *testing.T) {
+	mockClient := &MockWAClient{
+		IsAuthenticatedFunc: func() bool { return false },
+		AuthenticateFunc:    func(ctx context.Context) error { return nil },
+	}
+
+	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
+
+	result, err := app.Auth(context.Background())
+	require.NoError(t, err)
+	require.True(t, result.Authenticated)
+	require.Equal(t, "Successfully authenticated", result.Message)
+}
+
+// TestAuth_AuthenticationFails verifies that Auth returns an error when authentication fails.
+func TestAuth_AuthenticationFails(t *testing.T) {
+	mockClient := &MockWAClient{
+		IsAuthenticatedFunc: func() bool { return false },
+		AuthenticateFunc:    func(ctx context.Context) error { return fmt.Errorf("QR code expired") },
+	}
+
+	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
+
+	_, err := app.Auth(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "QR code expired")
+}
+
+// TestSync_StartSyncFails verifies that Sync returns an error when StartSync fails.
+func TestSync_StartSyncFails(t *testing.T) {
+	mockClient := &MockWAClient{
+		StartSyncFunc: func(ctx context.Context, handler func(interface{})) error {
+			return fmt.Errorf("connection refused")
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
+
+	_, err := app.Sync(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "connection refused")
+}
+
+// TestSync_ReturnsTypedResult verifies that Sync returns a SyncResult after context cancellation.
+func TestSync_ReturnsTypedResult(t *testing.T) {
+	mockClient := &MockWAClient{
+		StartSyncFunc: func(ctx context.Context, handler func(interface{})) error {
+			return nil
+		},
+	}
+
+	app := NewAppWithDeps(mockClient, &MockMessageStore{}, "/tmp", "test")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately so Sync doesn't block
+	cancel()
+
+	result, err := app.Sync(ctx)
+	require.NoError(t, err)
+	require.True(t, result.Synced)
+	require.Equal(t, int64(0), result.MessagesCount)
 }
 
 // TestListMessages_FiltersByChat verifies that --chat flag filters messages correctly.
@@ -62,15 +141,10 @@ func TestListMessages_FiltersByChat(t *testing.T) {
 	app := NewAppWithDeps(&MockWAClient{}, mockStore, "/tmp", "test")
 
 	// When: ListMessages called with chat filter
-	result := app.ListMessages(ptr(targetJID), nil, 10, 0)
+	messages, err := app.ListMessages(ptr(targetJID), nil, 10, 0)
+	require.NoError(t, err)
 
 	// Then: Only messages from target chat are returned
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed")
-
-	var messages []store.Message
-	err := json.Unmarshal(resp.Data, &messages)
-	require.NoError(t, err)
 	require.Len(t, messages, 2, "should return only 2 messages from target chat")
 
 	for _, m := range messages {
@@ -102,15 +176,10 @@ func TestListMessages_RespectsLimit(t *testing.T) {
 	app := NewAppWithDeps(&MockWAClient{}, mockStore, "/tmp", "test")
 
 	// When: ListMessages called with limit=2
-	result := app.ListMessages(nil, nil, 2, 0)
+	messages, err := app.ListMessages(nil, nil, 2, 0)
+	require.NoError(t, err)
 
 	// Then: Only 2 messages returned (behavioral - tests output, not internals)
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success)
-
-	var messages []store.Message
-	err := json.Unmarshal(resp.Data, &messages)
-	require.NoError(t, err)
 	require.Len(t, messages, 2, "should return only 2 messages")
 }
 
@@ -159,12 +228,9 @@ func TestDownloadMedia_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := NewAppWithDeps(&MockWAClient{}, tt.mockStore, "/tmp", "test")
 
-			result := app.DownloadMedia(context.Background(), tt.messageID, nil, "")
-
-			resp := parseResponse(t, result)
-			require.False(t, resp.Success, "should fail")
-			require.NotNil(t, resp.Error)
-			require.Contains(t, *resp.Error, tt.wantContain)
+			_, err := app.DownloadMedia(context.Background(), tt.messageID, nil, "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.wantContain)
 		})
 	}
 }
@@ -185,15 +251,10 @@ func TestSearchContacts_ReturnsResults(t *testing.T) {
 	app := NewAppWithDeps(&MockWAClient{}, mockStore, "/tmp", "test")
 
 	// When: SearchContacts called with query
-	result := app.SearchContacts("john")
+	contacts, err := app.SearchContacts("john")
+	require.NoError(t, err)
 
 	// Then: Returns matching contacts
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success)
-
-	var contacts []store.Contact
-	err := json.Unmarshal(resp.Data, &contacts)
-	require.NoError(t, err)
 	require.Len(t, contacts, 1)
 	require.Equal(t, "John Doe", contacts[0].Name)
 }
@@ -223,18 +284,12 @@ func TestSendReply_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.SendReply(context.Background(), "5511999999999", "my reply text", "orig-msg-123")
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.SendReply(context.Background(), "5511999999999", "my reply text", "orig-msg-123")
 	require.NoError(t, err)
-	require.Equal(t, true, data["sent"])
-	require.Equal(t, "reply-msg-id", data["id"])
-	require.Equal(t, "orig-msg-123", data["reply_to"])
-	require.Equal(t, "my reply text", data["message"])
+	require.True(t, result.Sent)
+	require.Equal(t, "reply-msg-id", result.ID)
+	require.Equal(t, "orig-msg-123", result.ReplyTo)
+	require.Equal(t, "my reply text", result.Message)
 
 	// Verify the client received correct reply context
 	require.Equal(t, "my reply text", capturedMessage)
@@ -253,12 +308,9 @@ func TestSendReply_MetadataLookupFails(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.SendReply(context.Background(), "5511999999999", "reply text", "nonexistent-id")
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "looking up reply-to message")
+	_, err := app.SendReply(context.Background(), "5511999999999", "reply text", "nonexistent-id")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "looking up reply-to message")
 }
 
 // TestListChats_ReturnsChats verifies chat listing works.
@@ -275,15 +327,10 @@ func TestListChats_ReturnsChats(t *testing.T) {
 	app := NewAppWithDeps(&MockWAClient{}, mockStore, "/tmp", "test")
 
 	// When: ListChats called
-	result := app.ListChats(nil, 10, 0)
+	chats, err := app.ListChats(nil, 10, 0)
+	require.NoError(t, err)
 
 	// Then: Returns chats
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success)
-
-	var chats []store.Chat
-	err := json.Unmarshal(resp.Data, &chats)
-	require.NoError(t, err)
 	require.Len(t, chats, 2)
 }
 
@@ -313,17 +360,11 @@ func TestReactToMessage_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.ReactToMessage(context.Background(), "msg-123", "\xf0\x9f\x91\x8d", nil)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.ReactToMessage(context.Background(), "msg-123", "\xf0\x9f\x91\x8d", nil)
 	require.NoError(t, err)
-	require.Equal(t, true, data["reacted"])
-	require.Equal(t, "msg-123", data["message_id"])
-	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+	require.True(t, result.Reacted)
+	require.Equal(t, "msg-123", result.MessageID)
+	require.Equal(t, "chat@s.whatsapp.net", result.ChatJID)
 
 	// Verify the client received correct parameters
 	require.Equal(t, "chat@s.whatsapp.net", capturedChatJID)
@@ -354,16 +395,10 @@ func TestReactToMessage_RemoveReaction(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.ReactToMessage(context.Background(), "msg-123", "", nil)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.ReactToMessage(context.Background(), "msg-123", "", nil)
 	require.NoError(t, err)
-	require.Equal(t, false, data["reacted"])
-	require.Equal(t, "removed", data["action"])
+	require.False(t, result.Reacted)
+	require.Equal(t, "removed", result.Action)
 	require.Equal(t, "", capturedEmoji)
 }
 
@@ -378,12 +413,9 @@ func TestReactToMessage_MessageNotFound(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.ReactToMessage(context.Background(), "nonexistent-id", "\xf0\x9f\x91\x8d", nil)
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "not found")
+	_, err := app.ReactToMessage(context.Background(), "nonexistent-id", "\xf0\x9f\x91\x8d", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
 }
 
 // TestDeleteMessage_Success verifies that deleting a message looks up metadata and calls RevokeMessage.
@@ -411,17 +443,11 @@ func TestDeleteMessage_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.DeleteMessage(context.Background(), "msg-456", nil)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.DeleteMessage(context.Background(), "msg-456", nil)
 	require.NoError(t, err)
-	require.Equal(t, true, data["deleted"])
-	require.Equal(t, "msg-456", data["message_id"])
-	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+	require.True(t, result.Deleted)
+	require.Equal(t, "msg-456", result.MessageID)
+	require.Equal(t, "chat@s.whatsapp.net", result.ChatJID)
 
 	require.Equal(t, "chat@s.whatsapp.net", capturedChatJID)
 	require.Equal(t, "5511999999999@s.whatsapp.net", capturedSenderJID)
@@ -439,12 +465,9 @@ func TestDeleteMessage_NotFound(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.DeleteMessage(context.Background(), "nonexistent-id", nil)
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "not found")
+	_, err := app.DeleteMessage(context.Background(), "nonexistent-id", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
 }
 
 // TestEditMessage_Success verifies that editing a message looks up metadata and calls EditMessage.
@@ -472,18 +495,12 @@ func TestEditMessage_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.EditMessage(context.Background(), "msg-789", "updated text", nil)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.EditMessage(context.Background(), "msg-789", "updated text", nil)
 	require.NoError(t, err)
-	require.Equal(t, true, data["edited"])
-	require.Equal(t, "msg-789", data["message_id"])
-	require.Equal(t, "group@g.us", data["chat_jid"])
-	require.Equal(t, "updated text", data["new_text"])
+	require.True(t, result.Edited)
+	require.Equal(t, "msg-789", result.MessageID)
+	require.Equal(t, "group@g.us", result.ChatJID)
+	require.Equal(t, "updated text", result.NewText)
 
 	require.Equal(t, "group@g.us", capturedChatJID)
 	require.Equal(t, "msg-789", capturedMessageID)
@@ -501,12 +518,9 @@ func TestEditMessage_NotFound(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.EditMessage(context.Background(), "nonexistent-id", "new text", nil)
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "not found")
+	_, err := app.EditMessage(context.Background(), "nonexistent-id", "new text", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
 }
 
 // TestMarkMessageRead_Success verifies that marking a message read looks up metadata and calls MarkRead.
@@ -540,17 +554,11 @@ func TestMarkMessageRead_Success(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.MarkMessageRead(context.Background(), "msg-read-1", nil)
-
-	resp := parseResponse(t, result)
-	require.True(t, resp.Success, "should succeed: %v", resp.Error)
-
-	var data map[string]interface{}
-	err := json.Unmarshal(resp.Data, &data)
+	result, err := app.MarkMessageRead(context.Background(), "msg-read-1", nil)
 	require.NoError(t, err)
-	require.Equal(t, true, data["marked_read"])
-	require.Equal(t, "msg-read-1", data["message_id"])
-	require.Equal(t, "chat@s.whatsapp.net", data["chat_jid"])
+	require.True(t, result.MarkedRead)
+	require.Equal(t, "msg-read-1", result.MessageID)
+	require.Equal(t, "chat@s.whatsapp.net", result.ChatJID)
 
 	require.Equal(t, []string{"msg-read-1"}, capturedIDs)
 	require.Equal(t, msgTime, capturedTimestamp)
@@ -569,10 +577,7 @@ func TestMarkMessageRead_NotFound(t *testing.T) {
 
 	app := NewAppWithDeps(mockClient, mockStore, "/tmp", "test")
 
-	result := app.MarkMessageRead(context.Background(), "nonexistent-id", nil)
-
-	resp := parseResponse(t, result)
-	require.False(t, resp.Success)
-	require.NotNil(t, resp.Error)
-	require.Contains(t, *resp.Error, "not found")
+	_, err := app.MarkMessageRead(context.Background(), "nonexistent-id", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
 }
