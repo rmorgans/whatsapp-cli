@@ -620,6 +620,13 @@ func mediaTypeFromString(mediaType string) (whatsmeow.MediaType, error) {
 	}
 }
 
+// lidStoreReady reports whether the underlying whatsmeow LID store is
+// addressable. It is nil before whatsmeow has connected and populated the
+// device store, so callers must short-circuit lookups in that window.
+func (w *WAClient) lidStoreReady() bool {
+	return w.client != nil && w.client.Store != nil && w.client.Store.LIDs != nil
+}
+
 // ResolveJID resolves a JID string, converting LID-based JIDs to their
 // phone-number-based equivalents when a mapping exists in the local store.
 // Falls back to the original JID string if no mapping is found.
@@ -629,6 +636,9 @@ func (w *WAClient) ResolveJID(ctx context.Context, jid string) string {
 		return jid
 	}
 	if parsed.Server != waTypes.HiddenUserServer {
+		return jid
+	}
+	if !w.lidStoreReady() {
 		return jid
 	}
 	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, parsed)
@@ -647,6 +657,9 @@ func (w *WAClient) resolveSenderJID(ctx context.Context, jid waTypes.JID) string
 		}
 		return jid.String()
 	}
+	if !w.lidStoreReady() {
+		return jid.String()
+	}
 	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, jid)
 	if err != nil || pn.IsEmpty() {
 		return jid.String()
@@ -658,6 +671,9 @@ func (w *WAClient) resolveSenderJID(ctx context.Context, jid waTypes.JID) string
 // returning the full JID string (e.g. "61412345678@s.whatsapp.net").
 func (w *WAClient) resolveParticipantJID(ctx context.Context, jid waTypes.JID) string {
 	if jid.Server != waTypes.HiddenUserServer {
+		return jid.String()
+	}
+	if !w.lidStoreReady() {
 		return jid.String()
 	}
 	pn, err := w.client.Store.LIDs.GetPNForLID(ctx, jid)

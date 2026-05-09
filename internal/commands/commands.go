@@ -879,9 +879,6 @@ func (a *App) Sync(ctx context.Context) (SyncResult, error) {
 		}
 	}()
 
-	// Repair any stored LID identities from before LID resolution was added.
-	a.repairLIDIdentities(ctx)
-
 	// Create event handler
 	eventHandler := func(evt interface{}) {
 		switch v := evt.(type) {
@@ -1089,6 +1086,11 @@ func (a *App) Sync(ctx context.Context) (SyncResult, error) {
 	if err := a.client.StartSync(ctx, eventHandler); err != nil {
 		return SyncResult{}, err
 	}
+
+	// Repair any stored LID identities from before LID resolution was added.
+	// Must run AFTER StartSync — the LID store on the whatsmeow client is only
+	// addressable once Connect populates the device store.
+	a.repairLIDIdentities(ctx)
 
 	// Wait for context cancellation (Ctrl+C)
 	<-ctx.Done()

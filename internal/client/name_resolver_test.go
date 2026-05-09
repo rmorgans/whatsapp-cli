@@ -66,3 +66,19 @@ func TestResolveChatNameFallsBackToJID(t *testing.T) {
 	name := w.ResolveChatName(context.Background(), "status@broadcast", nil)
 	assert.Equal(t, "status@broadcast", name)
 }
+
+func TestResolveJIDFallsBackWhenClientNotConnected(t *testing.T) {
+	t.Parallel()
+
+	w := &WAClient{}
+	result := w.ResolveJID(context.Background(), "278378372440237@lid")
+	assert.Equal(t, "278378372440237@lid", result)
+}
+
+func TestResolveJIDPassesThroughNonLIDInputUnchanged(t *testing.T) {
+	t.Parallel()
+
+	w := &WAClient{}
+	result := w.ResolveJID(context.Background(), "61412345678@s.whatsapp.net")
+	assert.Equal(t, "61412345678@s.whatsapp.net", result)
+}
